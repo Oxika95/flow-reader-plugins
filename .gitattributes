@@ -1,0 +1,2 @@
+# Checksums in index.json are over the exact bytes; keep LF everywhere.
+* text=auto eol=lf

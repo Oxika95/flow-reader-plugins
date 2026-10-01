@@ -1,0 +1,17 @@
+{
+  "name": "flow-reader-plugins",
+  "private": true,
+  "description": "Official source plugins for Flow Reader",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-index.mjs",
+    "check": "node scripts/build-index.mjs --check",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "cheerio": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

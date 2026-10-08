@@ -42,7 +42,8 @@ test('manifest matches the app contract', () => {
   const { manifest } = plugin({});
   assert.equal(manifest.id, 'royalroad');
   assert.equal(manifest.bookIdPrefix, 'rr');
-  assert.equal(manifest.apiVersion, 2);
+  assert.equal(manifest.apiVersion, 3);
+  assert.ok(manifest.capabilities.includes('updates'));
   assert.deepEqual(
     manifest.lists.map((l) => l.id),
     ['follow', 'favorite', 'readlater'],
@@ -57,16 +58,19 @@ test('loadWork parses metadata and the full ToC', async () => {
   assert.equal(work.author, 'Author Name');
   assert.equal(work.synopsis, 'A short synopsis.');
   assert.deepEqual(work.tags, ['Fantasy', 'Adventure']);
-  assert.equal(work.views, 12345);
-  assert.equal(work.rating, '4.55 / 5');
-  assert.equal(work.status, 'Ongoing');
+  assert.deepEqual(work.card.stats, [
+    { icon: 'star', value: '4.55', label: 'Rating' },
+    { icon: 'eye', value: '12k', label: 'Views' },
+  ]);
+  assert.deepEqual(work.card.badges, ['Ongoing']);
+  assert.equal(work.status, undefined);
   assert.equal(work.cover, `${ORIGIN}/covers/demo.jpg`);
   assert.equal(work.chapters.length, 2);
   assert.equal(work.chapters[1].title, 'Life\u2019s Little Problems');
   assert.equal(work.chapters[1].url, `${ORIGIN}/fiction/1/demo/chapter/2/c2`);
 });
 
-test('loadWork returns v2 media card slots', async () => {
+test('loadWork returns media card slots', async () => {
   const html = FICTION_PAGE.replace(
     '<ul class="list-unstyled"><li>Pages: 10</li><li>12,345</li></ul>',
     `<ul class="list-unstyled">
@@ -78,7 +82,6 @@ test('loadWork returns v2 media card slots', async () => {
   );
   const { api } = plugin({ [`${ORIGIN}/fiction/1`]: { url: `${ORIGIN}/fiction/1/demo`, text: html } });
   const work = await api.loadWork('1');
-  assert.equal(work.views, 1234567);
   assert.deepEqual(work.card.stats, [
     { icon: 'star', value: '4.55', label: 'Rating' },
     { icon: 'followers', value: '12k', label: 'Followers' },
@@ -267,6 +270,80 @@ test('resolveUrl extracts fiction ids and follows short chapter links', async ()
   assert.equal(await api.resolveUrl(`${ORIGIN}/fiction/chapter/99`), '21220');
   assert.equal(await api.resolveUrl('https://example.com/fiction/1'), null);
   assert.equal(await api.resolveUrl('not a url'), null);
+});
+
+const RSS = `<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Demo</title>
+<link>${ORIGIN}/fiction/syndication/1</link>
+<item><title>Demo - 3. Third</title><link>${ORIGIN}/fiction/chapter/300</link><guid isPermaLink="false">300</guid></item>
+<item><title>Demo - 2. Second</title><link>${ORIGIN}/fiction/chapter/200</link><guid isPermaLink="false">200</guid></item>
+</channel></rss>`;
+
+const work = (id, lastChapter, chapters = 2) => ({
+  id,
+  url: `${ORIGIN}/fiction/${id}/demo`,
+  chapters,
+  lastChapterUrl: `${ORIGIN}/fiction/${id}/demo/chapter/${lastChapter}/slug`,
+});
+
+test('checkUpdates signed out reads each RSS feed and compares chapter ids', async () => {
+  const { api, requests } = plugin({
+    [`${ORIGIN}/fiction/syndication/1`]: RSS,
+    [`${ORIGIN}/fiction/syndication/2`]: RSS,
+  });
+  const out = await api.checkUpdates([work('1', 200), work('2', 300)]);
+  assert.deepEqual(out, [
+    { id: '1', latestUrl: `${ORIGIN}/fiction/chapter/300` },
+    { id: '2', latestUrl: `${ORIGIN}/fiction/2/demo/chapter/300/slug` },
+  ]);
+  assert.ok(requests.every((r) => r.url.includes('/syndication/')));
+});
+
+test('checkUpdates never reports a feed older than the stored ToC', async () => {
+  const { api } = plugin({ [`${ORIGIN}/fiction/syndication/1`]: RSS });
+  const out = await api.checkUpdates([work('1', 999)]);
+  assert.deepEqual(out, [{ id: '1', latestUrl: `${ORIGIN}/fiction/1/demo/chapter/999/slug` }]);
+});
+
+test('checkUpdates signed in reads the follows page, then RSS for the rest', async () => {
+  const follows = `<script>window.royalroad.userId = 42;</script>
+    <div class="fiction-list-item">
+      <h2 class="fiction-title"><a href="/fiction/1/demo">Demo</a></h2>
+      <div class="list-item"><span>Last Update:</span> <a href="/fiction/1/demo/chapter/310/new">Chapter 4</a></div>
+      <div class="list-item"><span>Last Read:</span> <a href="/fiction/1/demo/chapter/200/old">Chapter 2</a></div>
+    </div>
+    <div class="fiction-list-item">
+      <h2 class="fiction-title"><a href="/fiction/5/count-only">Count only</a></h2>
+      <div class="stats"><span>1,204 Chapters</span></div>
+    </div>`;
+  const { api, requests } = plugin(
+    {
+      [`${ORIGIN}/fictions/follows?page=1`]: follows,
+      [`${ORIGIN}/fiction/syndication/9`]: RSS,
+    },
+    { secrets: { loggedIn: 'true' } },
+  );
+  const out = await api.checkUpdates([work('1', 200), work('5', 50, 1200), work('9', 300)]);
+  assert.deepEqual(out, [
+    { id: '1', latestUrl: `${ORIGIN}/fiction/1/demo/chapter/310/new` },
+    { id: '5', chapters: 1204 },
+    { id: '9', latestUrl: `${ORIGIN}/fiction/9/demo/chapter/300/slug` },
+  ]);
+  assert.equal(requests.filter((r) => r.url.includes('/fictions/follows')).length, 1);
+});
+
+test('checkUpdates falls back to RSS when the session expired and skips failed feeds', async () => {
+  const loginPage = '<form class="form-login-details"></form><script>window.royalroad.userId = 0;</script>';
+  const host = plugin(
+    {
+      [`${ORIGIN}/fictions/follows?page=1`]: loginPage,
+      [`${ORIGIN}/fiction/syndication/1`]: RSS,
+      [`${ORIGIN}/fiction/syndication/2`]: { status: 404, text: 'missing' },
+    },
+    { secrets: { loggedIn: 'true' } },
+  );
+  const out = await host.api.checkUpdates([work('1', 200), work('2', 200)]);
+  assert.deepEqual(out, [{ id: '1', latestUrl: `${ORIGIN}/fiction/chapter/300` }]);
+  assert.equal(host.secrets.get('loggedIn'), 'false');
 });
 
 test('syncProgress never throws', async () => {

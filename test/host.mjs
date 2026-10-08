@@ -1,4 +1,4 @@
-// Node stand-in for the Flow Reader plugin host (`flow` global, apiVersion 1).
+// Node stand-in for the Flow Reader plugin host (`flow` global, apiVersion 3).
 // Mirrors app/src/main/java/com/personal/flowreader/plugin/runtime: fetch returns non-2xx instead
 // of throwing, HTML nodes follow Jsoup semantics (normalized text, `abs:` attributes).
 import { readFileSync } from 'node:fs';

@@ -1,5 +1,5 @@
 /*
- * Royal Road source plugin for Flow Reader (plugin apiVersion 1).
+ * Royal Road source plugin for Flow Reader (plugin apiVersion 3).
  *
  * Selectors follow WebToEpub (`chapter-inner`, CSS `display:none` watermarks) and QuickNovel
  * (fiction list, `window.chapters`, author notes).
@@ -14,6 +14,9 @@ const HIDDEN_CSS = /([.#][A-Za-z][\w-]*)\s*\{[^}]*display\s*:\s*none/gi;
 
 /** Bookmark `type` values posted to `/fictions/setbookmark/{id}`, keyed by manifest list id. */
 const BOOKMARK_TYPES = { follow: 'follow', favorite: 'favorite', readlater: 'readlater' };
+
+/** Follows pages read per update check (sequential, gentle on the site). */
+const MAX_FOLLOW_PAGES = 10;
 
 /** Last in-site page, sent as Referer on the next request. */
 let lastPageUrl = ORIGIN;
@@ -42,6 +45,15 @@ function fictionId(url) {
 function fictionUrlFrom(url) {
   const m = FICTION_PREFIX.exec(String(url || '').trim());
   return m ? m[1] : null;
+}
+
+function chapterId(url) {
+  const m = /\/chapter\/(\d+)/.exec(pathOf(url));
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function syndicationUrl(workId) {
+  return ORIGIN + '/fiction/syndication/' + encodeURIComponent(workId);
 }
 
 function fictionUrl(workId) {
@@ -146,6 +158,63 @@ function parseFictionList(html, pageUrl) {
     out.push({ id: id, title: title, url: fictionUrlFrom(url) || url, author: author, cover: cover, subtitle: latest });
   });
   return { doc: doc, items: out };
+}
+
+/**
+ * Follows page rows → { [fictionId]: { latestId, latestUrl, chapters } }. The newest chapter
+ * link in a row (Last Update) has the highest chapter id; the count is a fallback.
+ */
+function parseFollowUpdates(doc) {
+  const out = {};
+  doc.select('div.fiction-list-item').forEach(function (item) {
+    const a = item.selectFirst('h2.fiction-title a') || item.selectFirst('a[href*="/fiction/"]');
+    const id = a ? fictionId(a.attr('abs:href')) : null;
+    if (!id || out[id]) return;
+    let latestId = null;
+    let latestUrl = '';
+    item.select('a[href*="/chapter/"]').forEach(function (link) {
+      const url = link.attr('abs:href');
+      const cid = chapterId(url);
+      if (cid != null && (latestId == null || cid > latestId)) {
+        latestId = cid;
+        latestUrl = url;
+      }
+    });
+    const m = /([\d,]+)\s+Chapters?\b/i.exec(item.text());
+    const chapters = m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+    if (latestId == null && chapters == null) return;
+    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters };
+  });
+  return out;
+}
+
+/** Newest chapter in a fiction RSS feed (`/fiction/syndication/{id}`), by chapter id. */
+function parseSyndication(xml) {
+  let best = null;
+  const items = String(xml || '').split(/<item>/i).slice(1);
+  items.forEach(function (raw) {
+    const link = /<link>\s*([^<\s]+)\s*<\/link>/i.exec(raw);
+    const guid = /<guid[^>]*>\s*(\d+)\s*<\/guid>/i.exec(raw);
+    const url = link ? link[1].trim() : '';
+    const cid = guid ? parseInt(guid[1], 10) : chapterId(url);
+    if (cid == null || !url) return;
+    if (!best || cid > best.latestId) best = { latestId: cid, latestUrl: url };
+  });
+  return best;
+}
+
+/**
+ * `UpdateInfo` for one work. A newest chapter id at or below the host's last known chapter
+ * echoes `lastChapterUrl`, so URL-form differences (short RSS links, renamed slugs) and deleted
+ * chapters never look like updates.
+ */
+function updateInfo(work, found) {
+  const lastId = chapterId(work.lastChapterUrl);
+  if (found.latestId != null) {
+    const newer = lastId == null || found.latestId > lastId;
+    return { id: String(work.id), latestUrl: newer ? found.latestUrl : work.lastChapterUrl };
+  }
+  return { id: String(work.id), chapters: found.chapters };
 }
 
 /** True when the pager links to a page after [page]. */
@@ -259,19 +328,13 @@ function parseFictionPage(html, pageUrl) {
   const followers = countOf(statMap['followers']);
   const favorites = countOf(statMap['favorites']);
 
-  let rating = '';
-  let ratingValue = '';
   const ratingEl = doc.selectFirst('span.font-red-sunglo');
   const ratingAttr = ratingEl ? ratingEl.attr('data-content') : '';
-  if (ratingAttr) {
-    ratingValue = ratingAttr.split('/')[0].trim();
-    if (ratingValue) rating = ratingValue + ' / 5';
-  }
+  const ratingValue = ratingAttr ? ratingAttr.split('/')[0].trim() : '';
 
   const authorEl = doc.selectFirst('div.fic-header h4 a, h4.font-white a, h4.font-white > span > a');
   const authorUrl = authorEl ? authorEl.attr('abs:href') : '';
 
-  // apiVersion 2 media card slots (the v1 fields above stay for older hosts).
   const cardStats = [];
   if (ratingValue) cardStats.push({ icon: 'star', value: ratingValue, label: 'Rating' });
   if (followers != null) cardStats.push({ icon: 'followers', value: compact(followers), label: 'Followers' });
@@ -295,9 +358,6 @@ function parseFictionPage(html, pageUrl) {
     cover: cover,
     synopsis: synopsis,
     tags: tags,
-    status: status,
-    rating: rating,
-    views: views,
     chapters: chapters,
     card: card,
   };
@@ -521,6 +581,49 @@ module.exports = {
     } catch (e) {
       // Best effort: reading continues offline.
     }
+  },
+
+  async checkUpdates(works) {
+    works = Array.isArray(works) ? works : [];
+    const pending = {};
+    works.forEach(function (w) {
+      if (w && w.id != null) pending[String(w.id)] = w;
+    });
+    const out = [];
+
+    // Signed in: one Follows page covers many stories.
+    if ((await isSignedIn()) && Object.keys(pending).length) {
+      try {
+        for (let page = 1; page <= MAX_FOLLOW_PAGES && Object.keys(pending).length; page++) {
+          const res = await getPage(listUrl('follow', page), { referer: page > 1 ? listUrl('follow', page - 1) : ORIGIN });
+          const doc = flow.html.parse(res.text, res.url);
+          const found = parseFollowUpdates(doc);
+          Object.keys(found).forEach(function (id) {
+            if (!pending[id]) return;
+            out.push(updateInfo(pending[id], found[id]));
+            delete pending[id];
+          });
+          if (!hasNextPage(doc, page)) break;
+        }
+      } catch (e) {
+        // Expired sign-in or a failed page: the per-story feeds below still work.
+      }
+    }
+
+    // Not followed on the site, or signed out: the public per-story RSS feed.
+    const rest = Object.keys(pending);
+    for (let i = 0; i < rest.length; i++) {
+      const work = pending[rest[i]];
+      try {
+        const res = await request(syndicationUrl(work.id), { referer: fictionUrl(work.id) });
+        if (res.status < 200 || res.status >= 300) continue;
+        const found = parseSyndication(res.text);
+        if (found) out.push(updateInfo(work, found));
+      } catch (e) {
+        // Skipped this run.
+      }
+    }
+    return out;
   },
 
   async resolveUrl(url) {

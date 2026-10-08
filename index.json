@@ -1,19 +1,19 @@
 {
   "name": "Flow Reader Official",
-  "apiVersion": 2,
+  "apiVersion": 3,
   "plugins": [
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.1.0",
-      "apiVersion": 2,
+      "version": "1.2.0",
+      "apiVersion": 3,
       "lang": "en",
       "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "3d03fce17ea43f66fce5123865b194824bdf69e8dea4eef167d491f7d4687289",
-      "sha256": "8e54b90e0fcfa65f3b6521650d89d4e92bdaa59918d2ab47fd9b1bd9afdca895"
+      "manifestSha256": "5c27b59d906babdb9967be289c48a50f34660c29ee5500ca5e76b171571a0e59",
+      "sha256": "6ad2eac2e1359a1fc0a258c0f422df577ab229931a69a15d6e043533e6bb4645"
     }
   ]
 }

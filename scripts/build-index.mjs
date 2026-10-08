@@ -7,10 +7,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-// Newest plugin contract the app understands (app: PLUGIN_HOST_API_VERSION). v1 plugins stay valid.
-const HOST_API_VERSION = 2;
+// Plugin contract range the app accepts (app: PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION).
+const HOST_API_VERSION = 3;
+const MIN_API_VERSION = 3;
 const ID = /^[a-z0-9][a-z0-9_-]{1,39}$/;
-const CAPABILITIES = new Set(['search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl']);
+const CAPABILITIES = new Set(['search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates']);
 const REQUIRED_FUNCTIONS = {
   search: ['search'],
   lists: ['list'],
@@ -18,6 +19,7 @@ const REQUIRED_FUNCTIONS = {
   membership: ['setMembership'],
   progressSync: ['syncProgress'],
   resolveUrl: ['resolveUrl'],
+  updates: ['checkUpdates'],
 };
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -30,8 +32,9 @@ function validate(dir, manifest, code) {
   if (!ID.test(manifest.id || '')) fail(`invalid id "${manifest.id}"`);
   if (manifest.bookIdPrefix && !ID.test(manifest.bookIdPrefix)) fail('invalid bookIdPrefix');
   if (!/^\d+(\.\d+)*$/.test(manifest.version || '')) fail('version must be dotted numbers');
-  if (!Number.isInteger(manifest.apiVersion) || manifest.apiVersion > HOST_API_VERSION) {
-    fail(`apiVersion must be an integer <= ${HOST_API_VERSION}`);
+  const api = manifest.apiVersion;
+  if (!Number.isInteger(api) || api < MIN_API_VERSION || api > HOST_API_VERSION) {
+    fail(`apiVersion must be an integer from ${MIN_API_VERSION} to ${HOST_API_VERSION}`);
   }
   if (!Array.isArray(manifest.allowedHosts) || manifest.allowedHosts.length === 0) fail('allowedHosts is required');
   for (const cap of manifest.capabilities || []) {

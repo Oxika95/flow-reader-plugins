@@ -31,8 +31,9 @@ Cross-repo change checklist: `../flow-reader/docs/agent/map.md`.
 
 - Never change a published plugin's `id` or `bookIdPrefix` (they key users' books, data, sign-in).
 - Bump `version` in `plugin.json` for every release; run `npm run build` and commit `index.json`.
-- Plugins return JSON only: no UI, no app storage. Keep v1 fields (`status`, `rating`, `views`)
-  alongside apiVersion 2 `card` slots.
+- Plugins return JSON only: no UI, no app storage. Stats and badges go in `card` slots.
+- Alpha: the app accepts only the current `apiVersion` (`MIN_API_VERSION` = `HOST_API_VERSION`).
+  A contract bump means republishing every plugin with the new `apiVersion` and a bumped `version`.
 - A `flow.*` API change starts in the app (`plugin/runtime/*`) and is mirrored in `test/host.mjs`.
   Ship the app first; plugins may only depend on what released app versions support.
 - This repo is public: no credentials, cookies, personal notes, or references to private repos.

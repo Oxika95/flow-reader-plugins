@@ -20,14 +20,15 @@ The contract lives in the app repo:
 
 - [Plugin API](https://github.com/Oxika95/FlowReader/blob/master/docs/plugins/api.md): manifest, functions, `flow` host API
 - [UI contract](https://github.com/Oxika95/FlowReader/blob/master/docs/plugins/ui-contract.md): what the app renders from your manifest
-- [Media card example](https://github.com/Oxika95/FlowReader/blob/master/docs/plugins/examples/media-card.md): apiVersion 2 `card` slots and `cardAction`
+- [Media card example](https://github.com/Oxika95/FlowReader/blob/master/docs/plugins/examples/media-card.md): `card` slots and `cardAction`
 - [JSON schemas](https://github.com/Oxika95/FlowReader/tree/master/docs/plugins/schema): `plugin.json`, `loadWork` result, `cardAction` result
 
 Plugins never draw UI and never touch the app's storage. They fetch and parse a site through `flow.*`
-and return plain JSON. With `apiVersion: 2` a plugin can fill the story media card's slots (stats,
-badges, links, up to two rail and two footer actions); the app owns layout, theme, and the core
-actions. Keep the v1 fields (`status`, `rating`, `views`) so older app versions still show them.
-`npm run build` accepts `apiVersion` 1 or 2.
+and return plain JSON. A plugin can fill the story media card's slots (stats, badges, links, up to
+two rail and two footer actions); the app owns layout, theme, and the core actions. A plugin can
+also declare the `updates` capability and implement `checkUpdates(works)` so the app's background
+new-chapter check needs few requests. The app is in alpha and accepts only the current
+`apiVersion` (3); `npm run build` rejects anything else.
 
 1. Create `YourSite/plugin.json` and `YourSite/index.js` (CommonJS: assign to `module.exports`).
 2. Add tests under `test/` using the Node host in [`test/host.mjs`](test/host.mjs), which mirrors the

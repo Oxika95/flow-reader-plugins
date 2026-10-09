@@ -19,14 +19,14 @@
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "apiVersion": 4,
       "lang": "en",
       "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "4cee74e8109ebe85e8c62d0aed1d43b2166afc6ed6ad718a2a73461e9ee7a576",
-      "sha256": "d7c8544a23ad6505668769e78139eec1c37861e28c11b00769506410cd060d5f"
+      "manifestSha256": "d7a7c25f9d99ec511973c212e5209f2388169073a0de5cb7af4171d0e23cc779",
+      "sha256": "318945e795fd794fa16a26db2d15869517a09582637c6a260b4d95485c7d2cc6"
     }
   ]
 }

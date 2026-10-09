@@ -449,12 +449,19 @@ function chapterHtml(pageHtml, pageUrl, includeNotes) {
   return { title: title, html: html, text: inner.text().trim() };
 }
 
-function loginToken(html) {
-  const doc = flow.html.parse(html);
-  const el =
-    doc.selectFirst('form.form-login-details input[name="__RequestVerificationToken"]') ||
-    doc.selectFirst('input[name="__RequestVerificationToken"]');
-  return (el && el.attr('value')) || null;
+/** Signed-in user's name: the text of a link to their own profile, or '' when absent. */
+function accountName(html, pageUrl) {
+  const m = USER_ID.exec(html);
+  if (!m || m[1] === '0') return '';
+  const doc = flow.html.parse(html, pageUrl);
+  const links = doc.select('a[href*="/profile/' + m[1] + '"]');
+  for (let i = 0; i < links.length; i++) {
+    const href = pathOf(links[i].attr('abs:href'));
+    if (!new RegExp('/profile/' + m[1] + '(?:[/?#]|$)').test(href)) continue;
+    const name = links[i].text().trim();
+    if (name) return name;
+  }
+  return '';
 }
 
 /** `setbookmark` form for [type] on a fiction page, or null when absent (already set / signed out). */
@@ -512,34 +519,6 @@ module.exports = {
     return { title: parsed.title || chapter.title || 'Royal Road chapter', html: parsed.html };
   },
 
-  async login(fields) {
-    const email = String((fields && fields.email) || '').trim();
-    const password = String((fields && fields.password) || '');
-    if (!email || !password) throw flow.error('AUTH_REQUIRED', 'Enter your email and password');
-    const loginUrl = ORIGIN + '/account/login';
-    const page = await getPage(loginUrl, { referer: ORIGIN, authCheck: false });
-    const token = loginToken(page.text);
-    if (!token) throw flow.error('PARSE', 'Could not read the Royal Road login form');
-    const res = await request(loginUrl, {
-      method: 'POST',
-      referer: loginUrl,
-      form: {
-        Email: email,
-        Password: password,
-        Remember: 'true',
-        ReturnUrl: '/',
-        __RequestVerificationToken: token,
-      },
-    });
-    const ok = !/\/account\/login/i.test(res.url) || isLoggedInHtml(res.text);
-    if (!ok || looksLikeLoginPage(res.text)) {
-      throw flow.error('AUTH_REQUIRED', 'Sign in failed. Check email and password.');
-    }
-    await flow.secrets.set('email', email);
-    await flow.secrets.set('loggedIn', 'true');
-    return { loggedIn: true, account: email };
-  },
-
   async logout() {
     try {
       await request(ORIGIN + '/account/logout');
@@ -550,9 +529,26 @@ module.exports = {
     await flow.secrets.clear();
   },
 
+  /** Checks the web sign-in cookies against the home page; offline keeps the last known state. */
   async session() {
-    const loggedIn = await isSignedIn();
-    return { loggedIn: loggedIn, account: loggedIn ? (await flow.secrets.get('email')) || '' : '' };
+    let res;
+    try {
+      res = await request(ORIGIN + '/home', { referer: ORIGIN });
+    } catch (e) {
+      res = null;
+    }
+    if (!res || res.status < 200 || res.status >= 300) {
+      const loggedIn = await isSignedIn();
+      return { loggedIn: loggedIn, account: loggedIn ? (await flow.secrets.get('account')) || '' : '' };
+    }
+    if (!isLoggedInHtml(res.text)) {
+      await flow.secrets.clear();
+      return { loggedIn: false, account: '' };
+    }
+    const account = accountName(res.text, res.url) || (await flow.secrets.get('account')) || 'Royal Road';
+    await flow.secrets.set('account', account);
+    await flow.secrets.set('loggedIn', 'true');
+    return { loggedIn: true, account: account };
   },
 
   async setMembership(workId, listId, on) {

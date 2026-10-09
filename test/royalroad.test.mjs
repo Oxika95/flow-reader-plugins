@@ -199,32 +199,39 @@ test('an expired session raises AUTH_REQUIRED and marks the plugin signed out', 
   assert.equal(host.secrets.get('loggedIn'), 'false');
 });
 
-test('login posts the verification token and stores only the session state', async () => {
-  const loginUrl = `${ORIGIN}/account/login`;
-  const loginForm = `<form class="form-horizontal"><input name="__RequestVerificationToken" value="oauth" /></form>
-    <form method="post" class="form-login-details"><input name="__RequestVerificationToken" value="login-token" /></form>`;
-  const host = plugin((url, opts) => {
-    if (url !== loginUrl) return null;
-    if (opts.method === 'POST') {
-      return { url: `${ORIGIN}/home`, text: '<script>window.royalroad.userId = 42;</script>' };
-    }
-    return loginForm;
-  });
-  const session = await host.api.login({ email: ' me@example.com ', password: 'pw' });
-  assert.deepEqual(session, { loggedIn: true, account: 'me@example.com' });
-  const post = host.requests.find((r) => r.method === 'POST');
-  assert.equal(post.form.__RequestVerificationToken, 'login-token');
-  assert.equal(post.form.Email, 'me@example.com');
-  assert.equal(host.secrets.get('loggedIn'), 'true');
-  assert.equal([...host.secrets.values()].includes('pw'), false);
-  assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'me@example.com' });
+test('manifest signs in on the site, not with a password form', () => {
+  const host = plugin({});
+  assert.equal(host.manifest.auth.fields, undefined);
+  assert.equal(host.manifest.auth.web.url, `${ORIGIN}/account/login`);
+  assert.equal(host.manifest.auth.web.doneCookie, '.AspNetCore.Identity.Application');
+  assert.equal(host.api.login, undefined);
 });
 
-test('failed login is reported', async () => {
-  const loginUrl = `${ORIGIN}/account/login`;
-  const form = '<form class="form-login-details"><input name="__RequestVerificationToken" value="t" /></form>';
-  const { api } = plugin((url) => (url === loginUrl ? { url: loginUrl, text: form } : null));
-  await assert.rejects(api.login({ email: 'a', password: 'b' }), { code: 'AUTH_REQUIRED' });
+test('session reads the signed-in user from the home page', async () => {
+  const home = `<a href="/profile/7">Some Author</a>
+    <ul class="dropdown-menu"><li><a href="/profile/42">Reader Name</a></li><li><a href="/account/logout">Log out</a></li></ul>
+    <script>window.royalroad.userId = 42;</script>`;
+  const host = plugin({ [`${ORIGIN}/home`]: home });
+  assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'Reader Name' });
+  assert.equal(host.secrets.get('loggedIn'), 'true');
+  assert.equal(host.secrets.get('account'), 'Reader Name');
+});
+
+test('session falls back to a generic account name when the profile link is missing', async () => {
+  const host = plugin({ [`${ORIGIN}/home`]: '<script>window.royalroad.userId = 42;</script>' });
+  assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'Royal Road' });
+});
+
+test('session reports signed out and clears state when the cookies are not accepted', async () => {
+  const home = '<a href="/account/login">Log in</a><script>window.royalroad.userId = 0;</script>';
+  const host = plugin({ [`${ORIGIN}/home`]: home }, { secrets: { loggedIn: 'true', account: 'Reader Name' } });
+  assert.deepEqual(await host.api.session(), { loggedIn: false, account: '' });
+  assert.equal(host.secrets.size, 0);
+});
+
+test('session keeps the last known state when Royal Road is unreachable', async () => {
+  const host = plugin({ [`${ORIGIN}/home`]: { status: 503, text: '' } }, { secrets: { loggedIn: 'true', account: 'Reader Name' } });
+  assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'Reader Name' });
 });
 
 test('logout clears cookies and secrets', async () => {

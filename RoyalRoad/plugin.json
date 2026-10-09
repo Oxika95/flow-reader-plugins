@@ -2,7 +2,7 @@
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved Royal Road serials",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "apiVersion": 4,
   "site": "https://www.royalroad.com",
   "iconUrl": "https://www.royalroad.com/favicon.ico",
@@ -17,11 +17,8 @@
     { "id": "readlater", "title": "Read Later", "icon": "schedule", "membershipToggle": true, "syncable": false }
   ],
   "auth": {
-    "fields": [
-      { "key": "email", "label": "Email", "type": "email" },
-      { "key": "password", "label": "Password", "secret": true }
-    ],
-    "note": "Your password is only sent to Royal Road. Flow Reader keeps the session cookies, not the password."
+    "web": { "url": "https://www.royalroad.com/account/login", "doneCookie": ".AspNetCore.Identity.Application" },
+    "note": "Sign in on Royal Road's own page. Flow Reader keeps the session cookies, never your password."
   },
   "settings": [
     {

@@ -185,16 +185,27 @@ test('list requires sign-in and pages through follows', async () => {
   const signedOut = plugin({});
   await assert.rejects(signedOut.api.list('follow', 1), { code: 'AUTH_REQUIRED' });
 
-  const { api } = plugin({ [`${ORIGIN}/fictions/follows?page=1`]: html }, { secrets: { loggedIn: 'true' } });
+  const { api } = plugin({ [`${ORIGIN}/my/follows?page=1`]: html }, { secrets: { loggedIn: 'true' } });
   const page = await api.list('follow', 1);
   assert.deepEqual(page.items.map((w) => w.id), ['7']);
   assert.equal(page.hasMore, false);
-  await assert.rejects(api.list('favorite', 1), { code: 'UNSUPPORTED' });
+  await assert.rejects(api.list('other', 1), { code: 'UNSUPPORTED' });
+});
+
+test('favorites and read later sync from their own pages', async () => {
+  const row = (id) => `<div class="fiction-list-item"><h2 class="fiction-title"><a href="/fiction/${id}/x">X${id}</a></h2></div>
+    <script>window.royalroad.userId = 42;</script>`;
+  const { api } = plugin(
+    { [`${ORIGIN}/my/favorites?page=1`]: row(8), [`${ORIGIN}/my/readlater?page=1`]: row(9) },
+    { secrets: { loggedIn: 'true' } },
+  );
+  assert.deepEqual((await api.list('favorite', 1)).items.map((w) => w.id), ['8']);
+  assert.deepEqual((await api.list('readlater', 1)).items.map((w) => w.id), ['9']);
 });
 
 test('an expired session raises AUTH_REQUIRED and marks the plugin signed out', async () => {
   const loginPage = '<form class="form-login-details"></form><script>window.royalroad.userId = 0;</script>';
-  const host = plugin({ [`${ORIGIN}/fictions/follows?page=1`]: loginPage }, { secrets: { loggedIn: 'true' } });
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: loginPage }, { secrets: { loggedIn: 'true' } });
   await assert.rejects(host.api.list('follow', 1), { code: 'AUTH_REQUIRED' });
   assert.equal(host.secrets.get('loggedIn'), 'false');
 });
@@ -208,17 +219,17 @@ test('manifest signs in on the site, not with a password form', () => {
 });
 
 test('session reads the signed-in user from the home page', async () => {
-  const home = `<a href="/profile/7">Some Author</a>
-    <ul class="dropdown-menu"><li><a href="/profile/42">Reader Name</a></li><li><a href="/account/logout">Log out</a></li></ul>
-    <script>window.royalroad.userId = 42;</script>`;
+  const home = `<ul class="dropdown-menu"><li><a href="/profile/42">My Profile</a></li></ul>
+    <script>window.royalroad.userId = 42;
+    window.royalroad.username = "Reader Name";</script>`;
   const host = plugin({ [`${ORIGIN}/home`]: home });
   assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'Reader Name' });
   assert.equal(host.secrets.get('loggedIn'), 'true');
   assert.equal(host.secrets.get('account'), 'Reader Name');
 });
 
-test('session falls back to a generic account name when the profile link is missing', async () => {
-  const host = plugin({ [`${ORIGIN}/home`]: '<script>window.royalroad.userId = 42;</script>' });
+test('session falls back to a generic account name when the username is missing', async () => {
+  const host = plugin({ [`${ORIGIN}/home`]: '<script>window.royalroad.userId = 42; window.royalroad.username = "";</script>' });
   assert.deepEqual(await host.api.session(), { loggedIn: true, account: 'Royal Road' });
 });
 
@@ -242,27 +253,58 @@ test('logout clears cookies and secrets', async () => {
   assert.deepEqual(await host.api.session(), { loggedIn: false, account: '' });
 });
 
-test('setMembership posts the matching bookmark form', async () => {
-  const page = `<form action="/fictions/setbookmark/21220" method="post">
-      <input name="type" value="follow" /><input name="__RequestVerificationToken" value="follow-token" />
-    </form>
-    <form action="/fictions/setbookmark/21220" method="post">
-      <input name="type" value="readlater" /><input name="__RequestVerificationToken" value="later-token" />
-    </form>
-    <script>window.royalroad.userId = 42;</script>`;
-  const routes = (url, opts) => {
-    if (url === `${ORIGIN}/fiction/21220`) return { url: `${ORIGIN}/fiction/21220/mol`, text: page };
-    if (url === `${ORIGIN}/fictions/setbookmark/21220` && opts.method === 'POST') return 'ok';
+// Fiction page toggles as Royal Road renders them: `mark` is what submitting would set.
+const bookmarkForms = (marks) =>
+  Object.entries(marks)
+    .map(
+      ([type, mark]) => `<form method="post" action="/fictions/setbookmark/21220">
+      <input type="hidden" name="type" value="${type}" /><input type="hidden" name="mark" value="${mark}" />
+      <button class="button-icon-large toggle"></button>
+      <input name="__RequestVerificationToken" type="hidden" value="${type}-token" /></form>`,
+    )
+    .join('\n') + '<script>window.royalroad.userId = 42;</script>';
+
+function bookmarkHost(marks, opts = { secrets: { loggedIn: 'true' } }) {
+  const routes = (url, reqOpts) => {
+    if (url === `${ORIGIN}/fiction/21220`) return { url: `${ORIGIN}/fiction/21220/mol`, text: bookmarkForms(marks) };
+    if (url === `${ORIGIN}/fictions/setbookmark/21220` && reqOpts.method === 'POST') return 'ok';
     return null;
   };
-  const host = plugin(routes, { secrets: { loggedIn: 'true' } });
+  return plugin(routes, opts);
+}
+
+test('setMembership adds with the list type (Read Later is "ril")', async () => {
+  const host = bookmarkHost({ follow: 'False', favorite: 'True', ril: 'True' });
   assert.equal(await host.api.setMembership('21220', 'readlater', true), true);
   const post = host.requests.find((r) => r.method === 'POST');
-  assert.deepEqual(post.form, { type: 'readlater', __RequestVerificationToken: 'later-token' });
+  assert.deepEqual(post.form, { type: 'ril', mark: 'true', __RequestVerificationToken: 'ril-token' });
+});
 
-  assert.equal(await host.api.setMembership('21220', 'favorite', true), false, 'form absent');
-  assert.equal(await host.api.setMembership('21220', 'follow', false), false, 'removal is local only');
-  assert.equal(await plugin(routes).api.setMembership('21220', 'follow', true), false, 'signed out');
+test('setMembership removes from the site', async () => {
+  const host = bookmarkHost({ follow: 'False', favorite: 'True', ril: 'True' });
+  assert.equal(await host.api.setMembership('21220', 'follow', false), true);
+  const post = host.requests.find((r) => r.method === 'POST');
+  assert.deepEqual(post.form, { type: 'follow', mark: 'false', __RequestVerificationToken: 'follow-token' });
+});
+
+test('setMembership skips the post when the site already matches', async () => {
+  const host = bookmarkHost({ follow: 'False', favorite: 'True', ril: 'True' });
+  assert.equal(await host.api.setMembership('21220', 'follow', true), true, 'already followed');
+  assert.equal(await host.api.setMembership('21220', 'favorite', false), true, 'already not a favorite');
+  assert.equal(host.requests.filter((r) => r.method === 'POST').length, 0);
+});
+
+test('setMembership without a form or session leaves the site alone', async () => {
+  assert.equal(await bookmarkHost({ follow: 'True' }).api.setMembership('21220', 'favorite', true), false, 'form absent');
+  assert.equal(await bookmarkHost({ follow: 'True' }).api.setMembership('21220', 'other', true), false, 'unknown list');
+  assert.equal(await bookmarkHost({ follow: 'True' }, {}).api.setMembership('21220', 'follow', true), false, 'signed out');
+});
+
+test('loadChapter fetches without cookies so downloads never move Last read', async () => {
+  const url = `${ORIGIN}/fiction/1/demo/chapter/1/c1`;
+  const { api, requests } = plugin({ [url]: '<h1>C1</h1><div class="chapter-inner chapter-content"><p>Text</p></div>' });
+  await api.loadChapter({ title: 'C1', url }, null);
+  assert.equal(requests[0].cookies, false);
 });
 
 test('resolveUrl extracts fiction ids and follows short chapter links', async () => {
@@ -324,7 +366,7 @@ test('checkUpdates signed in reads the follows page, then RSS for the rest', asy
     </div>`;
   const { api, requests } = plugin(
     {
-      [`${ORIGIN}/fictions/follows?page=1`]: follows,
+      [`${ORIGIN}/my/follows?page=1`]: follows,
       [`${ORIGIN}/fiction/syndication/9`]: RSS,
     },
     { secrets: { loggedIn: 'true' } },
@@ -335,14 +377,14 @@ test('checkUpdates signed in reads the follows page, then RSS for the rest', asy
     { id: '5', chapters: 1204 },
     { id: '9', latestUrl: `${ORIGIN}/fiction/9/demo/chapter/300/slug` },
   ]);
-  assert.equal(requests.filter((r) => r.url.includes('/fictions/follows')).length, 1);
+  assert.equal(requests.filter((r) => r.url.includes('/my/follows')).length, 1);
 });
 
 test('checkUpdates falls back to RSS when the session expired and skips failed feeds', async () => {
   const loginPage = '<form class="form-login-details"></form><script>window.royalroad.userId = 0;</script>';
   const host = plugin(
     {
-      [`${ORIGIN}/fictions/follows?page=1`]: loginPage,
+      [`${ORIGIN}/my/follows?page=1`]: loginPage,
       [`${ORIGIN}/fiction/syndication/1`]: RSS,
       [`${ORIGIN}/fiction/syndication/2`]: { status: 404, text: 'missing' },
     },
@@ -353,9 +395,121 @@ test('checkUpdates falls back to RSS when the session expired and skips failed f
   assert.equal(host.secrets.get('loggedIn'), 'false');
 });
 
-test('syncProgress never throws', async () => {
-  const { api } = plugin(() => {
+test('syncProgress views the chapter signed in and throws when offline so the host retries', async () => {
+  const url = `${ORIGIN}/fiction/1/demo/chapter/1/c1`;
+  const host = plugin({ [url]: '<div class="chapter-inner"><p>x</p></div>' }, { secrets: { loggedIn: 'true' } });
+  await host.api.syncProgress('1', { title: 'c', url });
+  assert.equal(host.requests.length, 1);
+  assert.equal(host.requests[0].cookies, undefined, 'sends the session');
+
+  const offline = plugin(() => {
     throw new Error('offline');
-  });
-  await api.syncProgress('1', { title: 'c', url: `${ORIGIN}/fiction/1/demo/chapter/1/c1` });
+  }, { secrets: { loggedIn: 'true' } });
+  await assert.rejects(offline.api.syncProgress('1', { title: 'c', url }));
+
+  const signedOut = plugin({});
+  await signedOut.api.syncProgress('1', { title: 'c', url });
+  assert.equal(signedOut.requests.length, 0);
+});
+
+test('syncProgress to an earlier chapter submits the backtrack form', async () => {
+  const url = `${ORIGIN}/fiction/1/demo/chapter/5/c5`;
+  const page = `<script>window.royalroad.userId = 42;</script>
+    <div class="portlet light" id="rewind-container">
+      It appears that you've backtracked! Do you want to move your Reading Progress to this chapter?
+      <form method="post" class="rewind-form" action="/fiction/1/setprogress/chapter/5">
+        <button class="btn btn-sm btn-primary">Set Progress</button>
+        <input name="__RequestVerificationToken" type="hidden" value="rewind-token" /></form>
+    </div>
+    <div class="chapter-inner"><p>x</p></div>`;
+  const host = plugin(
+    (u, o) => {
+      if (u === url) return page;
+      if (u === `${ORIGIN}/fiction/1/setprogress/chapter/5` && o.method === 'POST') return 'ok';
+      return null;
+    },
+    { secrets: { loggedIn: 'true' } },
+  );
+  await host.api.syncProgress('1', { title: 'c5', url });
+  const post = host.requests.find((r) => r.method === 'POST');
+  assert.equal(post.url, `${ORIGIN}/fiction/1/setprogress/chapter/5`);
+  assert.deepEqual(post.form, { __RequestVerificationToken: 'rewind-token' });
+});
+
+// Follows rows as Royal Road renders them (trimmed): separate "Last read", combined, and never read.
+const FOLLOWS_ROWS = `<script>window.royalroad.userId = 42;</script>
+<div class="fiction-list-item row"><div class="col-sm-10">
+  <h2 class="fiction-title"><a href="/fiction/10/ten" class="font-red-sunglo bold">Ten</a></h2>
+  <ul class="list-unstyled margin-bottom-15">
+    <li class="list-item">
+Last Update:  <a href="/fiction/10/ten/chapter/1500/c15" class="bold row no-margin"><span>Chapter 15</span>
+      <span><time datetime="2026-10-09T16:03:57.0000000">33 minutes</time> ago</span></a></li>
+    <li class="list-item">
+      Last read:  <a href="/fiction/10/ten/chapter/1200/c12" class="bold row no-margin"><span>Chapter 12</span>
+      <span><time datetime="2026-10-07T12:44:10.0000000">2 days</time> ago</span></a></li>
+  </ul>
+  <a class="btn btn-primary" href="/chapter/next/10">Open Next Chapter</a>
+</div></div>
+<div class="fiction-list-item row"><div class="col-sm-10">
+  <h2 class="fiction-title"><a href="/fiction/20/twenty">Twenty</a></h2>
+  <ul class="list-unstyled"><li class="list-item">
+Last Update &amp; Last Read:  <a href="/fiction/20/twenty/chapter/2700/c27" class="bold row no-margin"><span>Chapter 27</span></a>
+  </li></ul>
+</div></div>
+<div class="fiction-list-item row"><div class="col-sm-10">
+  <h2 class="fiction-title"><a href="/fiction/30/thirty">Thirty</a></h2>
+  <ul class="list-unstyled"><li class="list-item">
+Last Update:  <a href="/fiction/30/thirty/chapter/3100/c31" class="bold row no-margin"><span>Chapter 31</span></a>
+  </li></ul>
+</div></div>`;
+
+const continuePage = (id, label, chapter) => `<script>window.royalroad.userId = 42;</script>
+<div class="col-md-4 col-lg-3 fic-buttons text-center md-text-left">
+  <a href="/fiction/${id}/x/chapter/${chapter}/c" class="btn btn-lg btn-primary">
+    <i class="fa fa-play-circle"></i><span>${label} <span class="hidden-xs">Reading</span></span></a>
+</div>`;
+
+test('readPositions reads Last read from Follows and skips never-read rows', async () => {
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
+  const out = await host.api.readPositions([work('10', 1500), work('20', 2700), work('30', 3100)]);
+  assert.deepEqual(out, [
+    { id: '10', chapterUrl: `${ORIGIN}/fiction/10/ten/chapter/1200/c12` },
+    { id: '20', chapterUrl: `${ORIGIN}/fiction/20/twenty/chapter/2700/c27` },
+  ]);
+  assert.equal(host.requests.length, 1, 'never-read follows need no fiction page');
+});
+
+test('readPositions shares one Follows scan with checkUpdates', async () => {
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
+  await host.api.checkUpdates([work('10', 1200)]);
+  await host.api.readPositions([work('10', 1500)]);
+  assert.equal(host.requests.filter((r) => r.url.includes('/my/follows')).length, 1);
+});
+
+test('readPositions falls back to a capped, rotating set of fiction pages', async () => {
+  const pages = { [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS };
+  for (let id = 41; id <= 47; id++) pages[`${ORIGIN}/fiction/${id}`] = continuePage(id, id === 42 ? 'Start' : 'Continue', id * 100);
+  const host = plugin(pages, { secrets: { loggedIn: 'true' } });
+  const works = [41, 42, 43, 44, 45, 46, 47].map((id) => work(String(id), 1));
+
+  const first = await host.api.readPositions(works);
+  assert.deepEqual(
+    first.map((p) => p.id),
+    ['41', '43', '44', '45'],
+    'five pages, "Start Reading" is not a position',
+  );
+  assert.equal(first[0].chapterUrl, `${ORIGIN}/fiction/41/x/chapter/4100/c`);
+
+  const second = await host.api.readPositions(works);
+  assert.deepEqual(
+    second.map((p) => p.id),
+    ['46', '47', '41', '43'],
+    'next run continues after the last page fetched',
+  );
+});
+
+test('readPositions signed out does nothing', async () => {
+  const host = plugin({});
+  assert.deepEqual(await host.api.readPositions([work('10', 1)]), []);
+  assert.equal(host.requests.length, 0);
 });

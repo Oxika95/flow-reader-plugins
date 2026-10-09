@@ -10,13 +10,23 @@ const HOSTS = ['royalroad.com', 'www.royalroad.com', 'royalroadl.com', 'www.roya
 const FICTION_ID = /\/fiction\/(\d+)/;
 const FICTION_PREFIX = /(https?:\/\/[^/]+\/fiction\/\d+\/[^/?#]+)/;
 const USER_ID = /window\.royalroad\.userId\s*=\s*(\d+)/;
+const USER_NAME = /window\.royalroad\.username\s*=\s*"((?:[^"\\]|\\.)*)"/;
 const HIDDEN_CSS = /([.#][A-Za-z][\w-]*)\s*\{[^}]*display\s*:\s*none/gi;
 
 /** Bookmark `type` values posted to `/fictions/setbookmark/{id}`, keyed by manifest list id. */
-const BOOKMARK_TYPES = { follow: 'follow', favorite: 'favorite', readlater: 'readlater' };
+const BOOKMARK_TYPES = { follow: 'follow', favorite: 'favorite', readlater: 'ril' };
+
+/** Signed-in list pages, keyed by manifest list id. */
+const LIST_PATHS = { follow: '/my/follows', favorite: '/my/favorites', readlater: '/my/readlater' };
 
 /** Follows pages read per update check (sequential, gentle on the site). */
 const MAX_FOLLOW_PAGES = 10;
+/** Fiction pages fetched per `readPositions` run for stories missing from Follows. */
+const MAX_POSITION_PAGES = 5;
+/** `checkUpdates` and `readPositions` run back to back; one Follows scan serves both. */
+const FOLLOWS_TTL_MS = 2 * 60 * 1000;
+
+let followsCache = null;
 
 /** Last in-site page, sent as Referer on the next request. */
 let lastPageUrl = ORIGIN;
@@ -66,8 +76,8 @@ function searchUrl(query, page) {
 }
 
 function listUrl(listId, page) {
-  if (listId === 'follow') return ORIGIN + '/fictions/follows?page=' + Math.max(1, page);
-  return null;
+  const path = LIST_PATHS[listId];
+  return path ? ORIGIN + path + '?page=' + Math.max(1, page) : null;
 }
 
 // --- HTTP -------------------------------------------------------------------------------------
@@ -81,11 +91,9 @@ async function request(url, opts) {
     },
     opts.headers || {},
   );
-  const res = await flow.fetch(url, {
-    method: opts.method || 'GET',
-    headers: headers,
-    form: opts.form,
-  });
+  const fetchOpts = { method: opts.method || 'GET', headers: headers, form: opts.form };
+  if (opts.cookies === false) fetchOpts.cookies = false;
+  const res = await flow.fetch(url, fetchOpts);
   lastPageUrl = res.url || url;
   return res;
 }
@@ -161,10 +169,11 @@ function parseFictionList(html, pageUrl) {
 }
 
 /**
- * Follows page rows → { [fictionId]: { latestId, latestUrl, chapters } }. The newest chapter
- * link in a row (Last Update) has the highest chapter id; the count is a fallback.
+ * Follows page rows → { [fictionId]: { latestId, latestUrl, chapters, readUrl } }. The newest
+ * chapter link in a row (Last Update) has the highest chapter id; the count is a fallback.
+ * `readUrl` is the "Last read" (or "Last Update & Last Read") chapter, '' when never read.
  */
-function parseFollowUpdates(doc) {
+function parseFollowRows(doc) {
   const out = {};
   doc.select('div.fiction-list-item').forEach(function (item) {
     const a = item.selectFirst('h2.fiction-title a') || item.selectFirst('a[href*="/fiction/"]');
@@ -180,12 +189,52 @@ function parseFollowUpdates(doc) {
         latestUrl = url;
       }
     });
+    let readUrl = '';
+    item.select('.list-item').forEach(function (li) {
+      if (readUrl || !/last\s+read/i.test(li.text())) return;
+      const link = li.selectFirst('a[href*="/chapter/"]');
+      if (link && chapterId(link.attr('abs:href')) != null) readUrl = link.attr('abs:href');
+    });
     const m = /([\d,]+)\s+Chapters?\b/i.exec(item.text());
     const chapters = m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
-    if (latestId == null && chapters == null) return;
-    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters };
+    if (latestId == null && chapters == null && !readUrl) return;
+    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters, readUrl: readUrl };
   });
   return out;
+}
+
+/** Every Follows row (cached briefly), or null when signed out or a page failed. */
+async function followRows() {
+  if (followsCache && Date.now() - followsCache.at < FOLLOWS_TTL_MS) return followsCache.rows;
+  if (!(await isSignedIn())) return null;
+  const rows = {};
+  try {
+    for (let page = 1; page <= MAX_FOLLOW_PAGES; page++) {
+      const res = await getPage(listUrl('follow', page), { referer: page > 1 ? listUrl('follow', page - 1) : ORIGIN });
+      const doc = flow.html.parse(res.text, res.url);
+      const found = parseFollowRows(doc);
+      Object.keys(found).forEach(function (id) {
+        if (!rows[id]) rows[id] = found[id];
+      });
+      if (!hasNextPage(doc, page)) break;
+    }
+  } catch (e) {
+    return null;
+  }
+  followsCache = { at: Date.now(), rows: rows };
+  return rows;
+}
+
+/** Fiction page "Continue Reading" chapter URL; '' for unread stories ("Start Reading"). */
+function continueUrl(html, pageUrl) {
+  const doc = flow.html.parse(html, pageUrl);
+  const links = doc.select('.fic-buttons a[href*="/chapter/"]');
+  for (let i = 0; i < links.length; i++) {
+    if (!/continue/i.test(links[i].text())) continue;
+    const url = links[i].attr('abs:href');
+    if (chapterId(url) != null) return url;
+  }
+  return '';
 }
 
 /** Newest chapter in a fiction RSS feed (`/fiction/syndication/{id}`), by chapter id. */
@@ -449,22 +498,21 @@ function chapterHtml(pageHtml, pageUrl, includeNotes) {
   return { title: title, html: html, text: inner.text().trim() };
 }
 
-/** Signed-in user's name: the text of a link to their own profile, or '' when absent. */
-function accountName(html, pageUrl) {
-  const m = USER_ID.exec(html);
-  if (!m || m[1] === '0') return '';
-  const doc = flow.html.parse(html, pageUrl);
-  const links = doc.select('a[href*="/profile/' + m[1] + '"]');
-  for (let i = 0; i < links.length; i++) {
-    const href = pathOf(links[i].attr('abs:href'));
-    if (!new RegExp('/profile/' + m[1] + '(?:[/?#]|$)').test(href)) continue;
-    const name = links[i].text().trim();
-    if (name) return name;
+/** Signed-in user's name from the inline `window.royalroad.username`, or '' when absent. */
+function accountName(html) {
+  const m = USER_NAME.exec(html);
+  if (!m) return '';
+  try {
+    return String(JSON.parse('"' + m[1] + '"')).trim();
+  } catch (e) {
+    return m[1].trim();
   }
-  return '';
 }
 
-/** `setbookmark` form for [type] on a fiction page, or null when absent (already set / signed out). */
+/**
+ * `setbookmark` toggle form for [type] on a fiction page, or null when absent (signed out).
+ * `mark` is what submitting would set: true means the story is not on that list yet.
+ */
 function bookmarkForm(html, pageUrl, type) {
   const doc = flow.html.parse(html, pageUrl);
   const forms = doc.select('form[action*="/fictions/setbookmark/"]');
@@ -475,9 +523,22 @@ function bookmarkForm(html, pageUrl, type) {
     const tokenEl = form.selectFirst('input[name="__RequestVerificationToken"]');
     const token = tokenEl ? tokenEl.attr('value') : '';
     if (!action || !token) return null;
-    return { action: action, token: token, type: type };
+    const markEl = form.selectFirst('input[name="mark"]');
+    const mark = !markEl || String(markEl.attr('value')).toLowerCase() !== 'false';
+    return { action: action, token: token, type: type, mark: mark };
   }
   return null;
+}
+
+/** Chapter page "Set Progress" form, shown when this chapter is before the saved progress. */
+function rewindForm(html, pageUrl) {
+  const doc = flow.html.parse(html, pageUrl);
+  const form = doc.selectFirst('form.rewind-form[action*="/setprogress/"]');
+  if (!form) return null;
+  const action = form.attr('abs:action') || flow.url.resolve(pageUrl, form.attr('action'));
+  const tokenEl = form.selectFirst('input[name="__RequestVerificationToken"]');
+  const token = tokenEl ? tokenEl.attr('value') : '';
+  return action && token ? { action: action, token: token } : null;
 }
 
 // --- Contract ---------------------------------------------------------------------------------
@@ -511,7 +572,8 @@ module.exports = {
 
   async loadChapter(chapter, work) {
     const referer = fictionUrlFrom(chapter.url) || (work && work.url) || lastPageUrl;
-    const res = await getPage(chapter.url, { referer: referer });
+    // Signed-in chapter views move the site's "Last read"; downloads must not.
+    const res = await getPage(chapter.url, { referer: referer, cookies: false, authCheck: false });
     const includeNotes = flow.settings.authorNotes !== false;
     const parsed = chapterHtml(res.text, res.url, includeNotes);
     if (!parsed) throw flow.error('PARSE', 'Could not find chapter text. Royal Road markup may have changed.');
@@ -545,7 +607,7 @@ module.exports = {
       await flow.secrets.clear();
       return { loggedIn: false, account: '' };
     }
-    const account = accountName(res.text, res.url) || (await flow.secrets.get('account')) || 'Royal Road';
+    const account = accountName(res.text) || (await flow.secrets.get('account')) || 'Royal Road';
     await flow.secrets.set('account', account);
     await flow.secrets.set('loggedIn', 'true');
     return { loggedIn: true, account: account };
@@ -553,16 +615,18 @@ module.exports = {
 
   async setMembership(workId, listId, on) {
     const type = BOOKMARK_TYPES[listId];
-    if (!type || !on) return false;
+    if (!type) return false;
     if (!(await isSignedIn())) return false;
     const url = fictionUrl(workId);
     const page = await getPage(url);
     const form = bookmarkForm(page.text, page.url, type);
     if (!form) return false;
+    followsCache = null;
+    if (form.mark !== !!on) return true;
     const res = await request(form.action, {
       method: 'POST',
       referer: page.url,
-      form: { type: form.type, __RequestVerificationToken: form.token },
+      form: { type: form.type, mark: on ? 'true' : 'false', __RequestVerificationToken: form.token },
     });
     if (res.status < 200 || res.status >= 400) {
       throw flow.error('NETWORK', 'Could not update Royal Road list (HTTP ' + res.status + ')');
@@ -570,13 +634,63 @@ module.exports = {
     return true;
   },
 
+  /**
+   * A signed-in chapter view moves the site's reading progress forward; an earlier chapter shows
+   * a "you've backtracked" form that sets it back. Throws so the host can retry.
+   */
   async syncProgress(workId, chapter) {
     if (!chapter || !chapter.url) return;
-    try {
-      await request(chapter.url, { referer: fictionUrlFrom(chapter.url) || fictionUrl(workId) });
-    } catch (e) {
-      // Best effort: reading continues offline.
+    if (!(await isSignedIn())) return;
+    const page = await getPage(chapter.url, { referer: fictionUrlFrom(chapter.url) || fictionUrl(workId) });
+    followsCache = null;
+    const rewind = rewindForm(page.text, page.url);
+    if (!rewind) return;
+    const res = await request(rewind.action, {
+      method: 'POST',
+      referer: page.url,
+      form: { __RequestVerificationToken: rewind.token },
+    });
+    if (res.status < 200 || res.status >= 400) {
+      throw flow.error('NETWORK', 'Could not set Royal Road reading progress (HTTP ' + res.status + ')');
     }
+  },
+
+  /** Last-read chapters: Follows rows first, then a few fiction pages ("Continue Reading"). */
+  async readPositions(works) {
+    works = Array.isArray(works) ? works : [];
+    if (!works.length || !(await isSignedIn())) return [];
+    const rows = (await followRows()) || {};
+    const out = [];
+    const rest = [];
+    works.forEach(function (w) {
+      if (!w || w.id == null) return;
+      const id = String(w.id);
+      const row = rows[id];
+      if (row && row.readUrl) out.push({ id: id, chapterUrl: row.readUrl });
+      else if (!row) rest.push(id);
+    });
+    if (!rest.length) return out;
+
+    // Favorites / Read Later only: rotate through them a few per run.
+    rest.sort();
+    const after = (await flow.storage.get('positionCursor')) || '';
+    let start = rest.findIndex(function (id) {
+      return id > after;
+    });
+    if (start < 0) start = 0;
+    const batch = [];
+    for (let i = 0; i < Math.min(MAX_POSITION_PAGES, rest.length); i++) batch.push(rest[(start + i) % rest.length]);
+    for (let i = 0; i < batch.length; i++) {
+      try {
+        const res = await getPage(fictionUrl(batch[i]));
+        const url = continueUrl(res.text, res.url);
+        if (url) out.push({ id: batch[i], chapterUrl: url });
+      } catch (e) {
+        if (e && e.code === 'AUTH_REQUIRED') break;
+      }
+    }
+    await flow.storage.set('positionCursor', batch[batch.length - 1]);
+    return out;
   },
 
   async checkUpdates(works) {
@@ -587,23 +701,15 @@ module.exports = {
     });
     const out = [];
 
-    // Signed in: one Follows page covers many stories.
-    if ((await isSignedIn()) && Object.keys(pending).length) {
-      try {
-        for (let page = 1; page <= MAX_FOLLOW_PAGES && Object.keys(pending).length; page++) {
-          const res = await getPage(listUrl('follow', page), { referer: page > 1 ? listUrl('follow', page - 1) : ORIGIN });
-          const doc = flow.html.parse(res.text, res.url);
-          const found = parseFollowUpdates(doc);
-          Object.keys(found).forEach(function (id) {
-            if (!pending[id]) return;
-            out.push(updateInfo(pending[id], found[id]));
-            delete pending[id];
-          });
-          if (!hasNextPage(doc, page)) break;
-        }
-      } catch (e) {
-        // Expired sign-in or a failed page: the per-story feeds below still work.
-      }
+    // Signed in: one Follows scan covers many stories. A failed scan falls back to the feeds below.
+    const rows = Object.keys(pending).length ? await followRows() : null;
+    if (rows) {
+      Object.keys(rows).forEach(function (id) {
+        const row = rows[id];
+        if (!pending[id] || (row.latestId == null && row.chapters == null)) return;
+        out.push(updateInfo(pending[id], row));
+        delete pending[id];
+      });
     }
 
     // Not followed on the site, or signed out: the public per-story RSS feed.
@@ -628,7 +734,7 @@ module.exports = {
     if (id) return id;
     // Short chapter links (`/fiction/chapter/123`) only reveal the fiction after a redirect.
     if (/\/chapter\/\d+/.test(pathOf(url))) {
-      const res = await getPage(String(url).trim());
+      const res = await getPage(String(url).trim(), { cookies: false, authCheck: false });
       return fictionId(res.url) || fictionId(parseFictionPage(res.text, res.url).url) || null;
     }
     return null;

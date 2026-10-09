@@ -25,8 +25,8 @@
       "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "d7a7c25f9d99ec511973c212e5209f2388169073a0de5cb7af4171d0e23cc779",
-      "sha256": "318945e795fd794fa16a26db2d15869517a09582637c6a260b4d95485c7d2cc6"
+      "manifestSha256": "56cfaa9562a749d66f007e74bb0ce40363a3b928d6a22085005eea183c93a3dd",
+      "sha256": "4866a5216ebb8494fe1dce9bdb9e5e59e234ded095e28a47076f3f22e6e8683c"
     }
   ]
 }

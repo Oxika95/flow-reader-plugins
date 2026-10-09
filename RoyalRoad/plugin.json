@@ -13,8 +13,8 @@
   "capabilities": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates"],
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "add", "membershipToggle": true, "syncable": true },
-    { "id": "favorite", "title": "Favorite", "icon": "favorite", "membershipToggle": true, "syncable": false },
-    { "id": "readlater", "title": "Read Later", "icon": "schedule", "membershipToggle": true, "syncable": false }
+    { "id": "favorite", "title": "Favorite", "icon": "favorite", "membershipToggle": true, "syncable": true },
+    { "id": "readlater", "title": "Read Later", "icon": "schedule", "membershipToggle": true, "syncable": true }
   ],
   "auth": {
     "web": { "url": "https://www.royalroad.com/account/login", "doneCookie": ".AspNetCore.Identity.Application" },

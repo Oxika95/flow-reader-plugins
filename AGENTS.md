@@ -7,6 +7,8 @@ Pages as `index.json` on every push to `main`, so a push reaches users immediate
 ## Layout
 
 - `RoyalRoad/` - Royal Road plugin (`id: royalroad`, book ids `rr:*`).
+- `Patreon/` - Patreon plugin (`id: patreon`, book ids `pt:*`; JSON:API, web sign-in, per-creator post
+ index in `flow.storage`).
 - `test/host.mjs` - Node mirror of the app's `flow.*` host API (fetch, html, storage, secrets);
   `test/*.test.mjs` - plugin tests.
 - `scripts/build-index.mjs` - validates manifests, writes `index.json` with sha256s; `HOST_API_VERSION`

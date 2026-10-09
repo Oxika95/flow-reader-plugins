@@ -8,10 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Plugin contract range the app accepts (app: PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION).
-const HOST_API_VERSION = 3;
-const MIN_API_VERSION = 3;
+const HOST_API_VERSION = 4;
+const MIN_API_VERSION = 4;
 const ID = /^[a-z0-9][a-z0-9_-]{1,39}$/;
-const CAPABILITIES = new Set(['search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates']);
+const CAPABILITIES = new Set(['search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates', 'browse']);
+const LIST_KINDS = new Set(['stories', 'browse']);
 const REQUIRED_FUNCTIONS = {
   search: ['search'],
   lists: ['list'],
@@ -20,6 +21,7 @@ const REQUIRED_FUNCTIONS = {
   progressSync: ['syncProgress'],
   resolveUrl: ['resolveUrl'],
   updates: ['checkUpdates'],
+  browse: ['browse'],
 };
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -37,10 +39,21 @@ function validate(dir, manifest, code) {
     fail(`apiVersion must be an integer from ${MIN_API_VERSION} to ${HOST_API_VERSION}`);
   }
   if (!Array.isArray(manifest.allowedHosts) || manifest.allowedHosts.length === 0) fail('allowedHosts is required');
+  const web = manifest.auth && manifest.auth.web;
+  if (web && (!/^https:\/\//.test(web.url || '') || !web.doneCookie)) fail('auth.web needs an https url and doneCookie');
   for (const cap of manifest.capabilities || []) {
     if (!CAPABILITIES.has(cap)) fail(`unknown capability "${cap}"`);
-    for (const fn of REQUIRED_FUNCTIONS[cap]) {
+    // Web sign-in happens in the app's browser; login(fields) is never called.
+    const required = cap === 'auth' && web ? ['logout', 'session'] : REQUIRED_FUNCTIONS[cap];
+    for (const fn of required) {
       if (!new RegExp(`\\b${fn}\\s*\\(`).test(code)) fail(`capability "${cap}" needs function ${fn}()`);
+    }
+  }
+  for (const list of manifest.lists || []) {
+    const kind = list.kind || 'stories';
+    if (!LIST_KINDS.has(kind)) fail(`list "${list.id}" has unknown kind "${kind}"`);
+    if (kind === 'browse' && !(manifest.capabilities || []).includes('browse')) {
+      fail(`list "${list.id}" is a browse list but the "browse" capability is missing`);
     }
   }
   for (const fn of ['loadWork', 'loadChapter']) {

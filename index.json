@@ -1,19 +1,32 @@
 {
   "name": "Flow Reader Official",
-  "apiVersion": 3,
+  "apiVersion": 4,
   "plugins": [
+    {
+      "id": "patreon",
+      "name": "Patreon",
+      "description": "Creators' Patreon posts as stories: collections and tags, with reading position and new-post alerts",
+      "version": "1.0.0",
+      "apiVersion": 4,
+      "lang": "en",
+      "iconUrl": "https://www.patreon.com/favicon.ico",
+      "manifestUrl": "Patreon/plugin.json",
+      "pluginUrl": "Patreon/index.js",
+      "manifestSha256": "922f52b693436d3fc6aa003ac562caef57f340b136af2167076fc24884844cfb",
+      "sha256": "31977f1a4c77e7fc868cc9158014065dd619867da88f31c056f603b7978177c8"
+    },
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.2.0",
-      "apiVersion": 3,
+      "version": "1.3.0",
+      "apiVersion": 4,
       "lang": "en",
       "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "5c27b59d906babdb9967be289c48a50f34660c29ee5500ca5e76b171571a0e59",
-      "sha256": "6ad2eac2e1359a1fc0a258c0f422df577ab229931a69a15d6e043533e6bb4645"
+      "manifestSha256": "4cee74e8109ebe85e8c62d0aed1d43b2166afc6ed6ad718a2a73461e9ee7a576",
+      "sha256": "d7c8544a23ad6505668769e78139eec1c37861e28c11b00769506410cd060d5f"
     }
   ]
 }

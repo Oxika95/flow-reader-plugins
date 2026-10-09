@@ -8,11 +8,12 @@ from this repository's published index:
 https://oxika95.github.io/flow-reader-plugins/index.json
 ```
 
-That URL is pre-added in Flow Reader under **Settings → Import → Plugins**.
+That URL is pre-added in Flow Reader under **Settings → Plugins**.
 
 | Folder | Plugin | Site |
 | --- | --- | --- |
 | [`RoyalRoad/`](RoyalRoad/) | Royal Road (`royalroad`, book ids `rr:*`) | royalroad.com |
+| [`Patreon/`](Patreon/) | Patreon (`patreon`, book ids `pt:*`): a creator's posts as stories (all posts, collections, tags); Memberships is a browse list of creator pages (About, Posts, Collections, Membership tabs) | patreon.com |
 
 ## Writing a plugin
 
@@ -27,8 +28,10 @@ Plugins never draw UI and never touch the app's storage. They fetch and parse a 
 and return plain JSON. A plugin can fill the story media card's slots (stats, badges, links, up to
 two rail and two footer actions); the app owns layout, theme, and the core actions. A plugin can
 also declare the `updates` capability and implement `checkUpdates(works)` so the app's background
-new-chapter check needs few requests. The app is in alpha and accepts only the current
-`apiVersion` (3); `npm run build` rejects anything else.
+new-chapter check needs few requests. Sites whose login needs a captcha or OAuth can declare
+`auth.web` (`{ url, doneCookie }`): the app signs in on the site's own page and hands the cookies to
+the plugin, which then needs only `session()` and `logout()`. The app is in alpha and accepts only
+the current `apiVersion` (4); `npm run build` rejects anything else.
 
 1. Create `YourSite/plugin.json` and `YourSite/index.js` (CommonJS: assign to `module.exports`).
 2. Add tests under `test/` using the Node host in [`test/host.mjs`](test/host.mjs), which mirrors the

@@ -1,0 +1,53 @@
+{
+  "id": "patreon",
+  "name": "Patreon",
+  "description": "Creators' Patreon posts as stories: collections and tags, with reading position and new-post alerts",
+  "version": "1.0.0",
+  "apiVersion": 4,
+  "site": "https://www.patreon.com",
+  "iconUrl": "https://www.patreon.com/favicon.ico",
+  "lang": "en",
+  "bookIdPrefix": "pt",
+  "allowedHosts": ["patreon.com"],
+  "minRequestIntervalMs": 1000,
+  "capabilities": ["search", "lists", "auth", "membership", "resolveUrl", "updates", "browse"],
+  "lists": [
+    { "id": "memberships", "title": "Memberships", "icon": "followers", "kind": "browse", "membershipToggle": false, "syncable": true },
+    { "id": "follow", "title": "Follow", "icon": "add", "membershipToggle": true, "syncable": false, "notifyDefault": true }
+  ],
+  "auth": {
+    "web": { "url": "https://www.patreon.com/login", "doneCookie": "session_id" },
+    "note": "Sign in on Patreon's own page. Flow Reader keeps the session cookies, never your password."
+  },
+  "settings": [
+    {
+      "key": "order",
+      "type": "choice",
+      "label": "Chapter order",
+      "description": "Collections and tags only; All posts always follow the publish date",
+      "default": "published",
+      "options": [
+        { "value": "published", "label": "Publish date" },
+        { "value": "titleNumber", "label": "Number in title" }
+      ]
+    },
+    {
+      "key": "lockedPosts",
+      "type": "choice",
+      "label": "Posts above your tier",
+      "description": "Posts you could read once stay in the chapter list either way",
+      "default": "hide",
+      "options": [
+        { "value": "hide", "label": "Hide" },
+        { "value": "show", "label": "Show as locked" }
+      ]
+    },
+    {
+      "key": "imageCaptions",
+      "type": "toggle",
+      "label": "Include image captions",
+      "default": true
+    }
+  ],
+  "shareHosts": ["patreon.com"]
+}

@@ -1,5 +1,5 @@
 /*
- * Royal Road source plugin for Flow Reader (plugin apiVersion 3).
+ * Royal Road source plugin for Flow Reader (plugin apiVersion 4).
  *
  * Selectors follow WebToEpub (`chapter-inner`, CSS `display:none` watermarks) and QuickNovel
  * (fiction list, `window.chapters`, author notes).

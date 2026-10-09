@@ -21,8 +21,6 @@ const LIST_PATHS = { follow: '/my/follows', favorite: '/my/favorites', readlater
 
 /** Follows pages read per update check (sequential, gentle on the site). */
 const MAX_FOLLOW_PAGES = 10;
-/** Fiction pages fetched per `readPositions` run for stories missing from Follows. */
-const MAX_POSITION_PAGES = 5;
 /** `checkUpdates` and `readPositions` run back to back; one Follows scan serves both. */
 const FOLLOWS_TTL_MS = 2 * 60 * 1000;
 
@@ -190,15 +188,20 @@ function parseFollowRows(doc) {
       }
     });
     let readUrl = '';
+    let readTitle = '';
     item.select('.list-item').forEach(function (li) {
       if (readUrl || !/last\s+read/i.test(li.text())) return;
       const link = li.selectFirst('a[href*="/chapter/"]');
-      if (link && chapterId(link.attr('abs:href')) != null) readUrl = link.attr('abs:href');
+      if (link && chapterId(link.attr('abs:href')) != null) {
+        readUrl = link.attr('abs:href');
+        const span = link.selectFirst('span');
+        readTitle = (span ? span.text() : link.text()).trim();
+      }
     });
     const m = /([\d,]+)\s+Chapters?\b/i.exec(item.text());
     const chapters = m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
     if (latestId == null && chapters == null && !readUrl) return;
-    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters, readUrl: readUrl };
+    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters, readUrl: readUrl, readTitle: readTitle };
   });
   return out;
 }
@@ -381,9 +384,6 @@ function parseFictionPage(html, pageUrl) {
   const ratingAttr = ratingEl ? ratingEl.attr('data-content') : '';
   const ratingValue = ratingAttr ? ratingAttr.split('/')[0].trim() : '';
 
-  const authorEl = doc.selectFirst('div.fic-header h4 a, h4.font-white a, h4.font-white > span > a');
-  const authorUrl = authorEl ? authorEl.attr('abs:href') : '';
-
   const cardStats = [];
   if (ratingValue) cardStats.push({ icon: 'star', value: ratingValue, label: 'Rating' });
   if (followers != null) cardStats.push({ icon: 'followers', value: compact(followers), label: 'Followers' });
@@ -392,7 +392,6 @@ function parseFictionPage(html, pageUrl) {
   const card = {
     stats: cardStats,
     badges: status ? [status] : [],
-    links: authorUrl && author ? [{ label: author, url: authorUrl }] : [],
   };
 
   const coverEl = doc.selectFirst('div.fic-header img, .cover-art-container img, img.thumbnail');
@@ -567,6 +566,9 @@ module.exports = {
     const detail = parseFictionPage(res.text, res.url);
     if (!detail.id) detail.id = String(workId);
     if (!detail.chapters.length) throw flow.error('PARSE', 'Could not find a chapter list for this story');
+    // Signed in, the same page's "Continue Reading" button is the site's reading position.
+    const readUrl = continueUrl(res.text, res.url);
+    if (readUrl) detail.readChapterUrl = readUrl;
     return detail;
   },
 
@@ -655,41 +657,21 @@ module.exports = {
     }
   },
 
-  /** Last-read chapters: Follows rows first, then a few fiction pages ("Continue Reading"). */
+  /**
+   * Last-read chapters from the Follows pages only. Favorites / Read Later pages carry no
+   * position; those stories get theirs from `loadWork` (`readChapterUrl`).
+   */
   async readPositions(works) {
     works = Array.isArray(works) ? works : [];
     if (!works.length || !(await isSignedIn())) return [];
     const rows = (await followRows()) || {};
     const out = [];
-    const rest = [];
     works.forEach(function (w) {
       if (!w || w.id == null) return;
       const id = String(w.id);
       const row = rows[id];
-      if (row && row.readUrl) out.push({ id: id, chapterUrl: row.readUrl });
-      else if (!row) rest.push(id);
+      if (row && row.readUrl) out.push({ id: id, chapterUrl: row.readUrl, chapterTitle: row.readTitle });
     });
-    if (!rest.length) return out;
-
-    // Favorites / Read Later only: rotate through them a few per run.
-    rest.sort();
-    const after = (await flow.storage.get('positionCursor')) || '';
-    let start = rest.findIndex(function (id) {
-      return id > after;
-    });
-    if (start < 0) start = 0;
-    const batch = [];
-    for (let i = 0; i < Math.min(MAX_POSITION_PAGES, rest.length); i++) batch.push(rest[(start + i) % rest.length]);
-    for (let i = 0; i < batch.length; i++) {
-      try {
-        const res = await getPage(fictionUrl(batch[i]));
-        const url = continueUrl(res.text, res.url);
-        if (url) out.push({ id: batch[i], chapterUrl: url });
-      } catch (e) {
-        if (e && e.code === 'AUTH_REQUIRED') break;
-      }
-    }
-    await flow.storage.set('positionCursor', batch[batch.length - 1]);
     return out;
   },
 

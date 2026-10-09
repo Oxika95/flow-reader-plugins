@@ -89,7 +89,7 @@ test('loadWork returns media card slots', async () => {
     { icon: 'eye', value: '1.2M', label: 'Views' },
   ]);
   assert.deepEqual(work.card.badges, ['Ongoing']);
-  assert.deepEqual(work.card.links, [{ label: 'Author Name', url: `${ORIGIN}/profile/1` }]);
+  assert.equal(work.card.links, undefined, 'author is already under the title');
 });
 
 test('loadWork falls back to the legacy chapter table', async () => {
@@ -473,8 +473,8 @@ test('readPositions reads Last read from Follows and skips never-read rows', asy
   const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
   const out = await host.api.readPositions([work('10', 1500), work('20', 2700), work('30', 3100)]);
   assert.deepEqual(out, [
-    { id: '10', chapterUrl: `${ORIGIN}/fiction/10/ten/chapter/1200/c12` },
-    { id: '20', chapterUrl: `${ORIGIN}/fiction/20/twenty/chapter/2700/c27` },
+    { id: '10', chapterUrl: `${ORIGIN}/fiction/10/ten/chapter/1200/c12`, chapterTitle: 'Chapter 12' },
+    { id: '20', chapterUrl: `${ORIGIN}/fiction/20/twenty/chapter/2700/c27`, chapterTitle: 'Chapter 27' },
   ]);
   assert.equal(host.requests.length, 1, 'never-read follows need no fiction page');
 });
@@ -486,26 +486,19 @@ test('readPositions shares one Follows scan with checkUpdates', async () => {
   assert.equal(host.requests.filter((r) => r.url.includes('/my/follows')).length, 1);
 });
 
-test('readPositions falls back to a capped, rotating set of fiction pages', async () => {
-  const pages = { [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS };
-  for (let id = 41; id <= 47; id++) pages[`${ORIGIN}/fiction/${id}`] = continuePage(id, id === 42 ? 'Start' : 'Continue', id * 100);
-  const host = plugin(pages, { secrets: { loggedIn: 'true' } });
-  const works = [41, 42, 43, 44, 45, 46, 47].map((id) => work(String(id), 1));
+test('readPositions fetches no fiction pages for stories off Follows', async () => {
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
+  const out = await host.api.readPositions([work('10', 1500), work('41', 1), work('42', 1)]);
+  assert.deepEqual(out.map((p) => p.id), ['10']);
+  assert.equal(host.requests.length, 1);
+});
 
-  const first = await host.api.readPositions(works);
-  assert.deepEqual(
-    first.map((p) => p.id),
-    ['41', '43', '44', '45'],
-    'five pages, "Start Reading" is not a position',
-  );
-  assert.equal(first[0].chapterUrl, `${ORIGIN}/fiction/41/x/chapter/4100/c`);
-
-  const second = await host.api.readPositions(works);
-  assert.deepEqual(
-    second.map((p) => p.id),
-    ['46', '47', '41', '43'],
-    'next run continues after the last page fetched',
-  );
+test('loadWork returns the Continue chapter as readChapterUrl, not Start', async () => {
+  const page = (label) => ({ url: `${ORIGIN}/fiction/1/demo`, text: FICTION_PAGE + continuePage(1, label, 2) });
+  const reading = await plugin({ [`${ORIGIN}/fiction/1`]: page('Continue') }).api.loadWork('1');
+  assert.equal(reading.readChapterUrl, `${ORIGIN}/fiction/1/x/chapter/2/c`);
+  const unread = await plugin({ [`${ORIGIN}/fiction/1`]: page('Start') }).api.loadWork('1');
+  assert.equal(unread.readChapterUrl, undefined);
 });
 
 test('readPositions signed out does nothing', async () => {

@@ -11,7 +11,7 @@
       "lang": "en",
       "manifestUrl": "Patreon/plugin.json",
       "pluginUrl": "Patreon/index.js",
-      "manifestSha256": "bce0abe1c10fd50095e8855bc36525435c8c52e0acd3f52f552ff7198e13b3a4",
+      "manifestSha256": "f57063a003f5507fed58c0ca17637736ed5ec872d1f0aeb51d39504971b5d6f3",
       "sha256": "4d5b3eac24fcf41ff2e39e835d90bf0c51e3a2f606f0033287f76cc6baa58ec0",
       "iconUrl": "Patreon/icon.png",
       "iconSha256": "39f92e788cee25b5b5954f3919e8cd9185c451ddd5ae21c1115c4694da25b9b2"
@@ -25,7 +25,7 @@
       "lang": "en",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "0575e693c1ae22da8f0290d18ee30cec59f732a8f7fb919ea59f6bea30adce12",
+      "manifestSha256": "be36aaefae094e1c91a0ec22c38ba1742c2d90531964c75a7304d91ab4284d57",
       "sha256": "fc6cb151af2403692ba43d73fc5919ef8be544cbf2b25c651195643c2829aaea",
       "iconUrl": "RoyalRoad/icon.png",
       "iconSha256": "623b163b3e85de6bec94f79c186bf6bdba1d465bcfde2058d41d8cf56efdf43c"

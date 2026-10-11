@@ -11,7 +11,7 @@
   "minRequestIntervalMs": 1000,
   "capabilities": ["search", "lists", "auth", "membership", "resolveUrl", "updates", "browse"],
   "lists": [
-    { "id": "follow", "title": "Follow", "icon": "add", "membershipToggle": true, "syncable": false, "notifyDefault": true },
+    { "id": "follow", "title": "Follow", "icon": "bookmark", "membershipToggle": true, "syncable": false, "notifyDefault": true },
     { "id": "memberships", "title": "Memberships", "icon": "followers", "kind": "browse", "membershipToggle": false, "syncable": true }
   ],
   "auth": {

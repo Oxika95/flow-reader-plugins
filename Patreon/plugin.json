@@ -2,7 +2,7 @@
   "id": "patreon",
   "name": "Patreon",
   "description": "Creators' Patreon posts as stories: collections and tags, with reading position and new-post alerts",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "apiVersion": 4,
   "site": "https://www.patreon.com",
   "lang": "en",

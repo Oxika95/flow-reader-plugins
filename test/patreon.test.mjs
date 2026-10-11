@@ -103,6 +103,7 @@ function makeRoutes(state) {
     }
     if (p === '/api/posts' && q.get('filter[campaign_id]') === CID) return json(postsPage(state.posts));
     if (p === '/api/collection' && q.get('filter[campaign_id]') === CID) {
+      if (!state.collections) return json({ data: [] });
       return json({
         data: [
           {
@@ -175,9 +176,9 @@ function makeRoutes(state) {
   };
 }
 
-function plugin({ posts = basePosts(), user = null, settings = {}, secrets = {} } = {}) {
-  const state = { posts, user };
-  const p = loadPlugin(DIR, { routes: makeRoutes(state), settings, secrets });
+function plugin({ posts = basePosts(), user = null, settings = {}, secrets = {}, collections = true } = {}) {
+  const state = { posts, user, collections };
+  const p = loadPlugin(DIR, { routes: makeRoutes(state), settings: { lockedPosts: 'hide', ...settings }, secrets });
   p.state = state;
   return p;
 }
@@ -191,8 +192,8 @@ test('manifest matches the app contract', () => {
   assert.equal(manifest.apiVersion, 4);
   assert.deepEqual(manifest.auth.web, { url: 'https://www.patreon.com/login', doneCookie: 'session_id' });
   assert.deepEqual(manifest.lists.map((l) => [l.id, l.kind || 'stories', !!l.syncable, !!l.notifyDefault]), [
-    ['memberships', 'browse', true, false],
     ['follow', 'stories', false, true],
+    ['memberships', 'browse', true, false],
   ]);
   assert.ok(manifest.capabilities.includes('browse'));
 });
@@ -244,7 +245,7 @@ test('series ids are not Patreon story ids', async () => {
 });
 
 test('all posts skip polls and hidden locked posts; collections use their own title and cover', async () => {
-  const { api } = plugin();
+  const { api } = plugin({ settings: { lockedPosts: 'hide' } });
   const all = await api.loadWork(CID);
   assert.deepEqual(all.chapters.map((c) => c.id), ['1001', '1002', '1003', '1004', '1005', '1007', '1008']);
   assert.equal(all.synopsis, 'LitRPG serials.Weekly chapters.');
@@ -254,8 +255,8 @@ test('all posts skip polls and hidden locked posts; collections use their own ti
   assert.deepEqual(col.chapters.map((c) => c.id), ['1001', '1003', '1007']);
 });
 
-test('locked posts can be shown as locked chapters', async () => {
-  const { api } = plugin({ settings: { lockedPosts: 'show' } });
+test('locked posts show as locked chapters by default', async () => {
+  const { api } = loadPlugin(DIR, { routes: makeRoutes({ posts: basePosts(), collections: true }) });
   const work = await api.loadWork(CID);
   const locked = work.chapters.find((c) => c.id === '1009');
   assert.equal(locked.title, 'Andy 4.37 - Top Tier Only');
@@ -264,8 +265,18 @@ test('locked posts can be shown as locked chapters', async () => {
   assert.ok(work.card.badges.includes('1 locked'));
 });
 
+test('all posts is named after the largest collection, else the largest tag, else the creator', async () => {
+  assert.equal((await plugin().api.loadWork(CID)).title, 'Aura Overload Book 3');
+  const fewerAo3 = basePosts().map((p) => (p.id === '1001' ? post(1001, p.attributes.title, p.attributes.published_at) : p));
+  const noCols = plugin({ collections: false, posts: fewerAo3 });
+  assert.equal((await noCols.api.loadWork(CID)).title, 'AA4');
+  const untagged = basePosts().map((p) => post(Number(p.id), p.attributes.title, p.attributes.published_at, { view: p.attributes.current_user_can_view }));
+  const bare = plugin({ collections: false, posts: untagged });
+  assert.equal((await bare.api.loadWork(CID)).title, 'Plum Parrot');
+});
+
 test('posts read once stay in the ToC after access lapses', async () => {
-  const p = plugin();
+  const p = plugin({ settings: { lockedPosts: 'hide' } });
   await p.api.loadWork(CID);
   p.state.posts = p.state.posts.map((x) =>
     x.id === '1001' ? { ...x, attributes: { ...x.attributes, current_user_can_view: false } } : x,

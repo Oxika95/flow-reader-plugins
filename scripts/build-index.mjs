@@ -1,4 +1,4 @@
-// Builds index.json from every `<Dir>/plugin.json` + `<Dir>/index.js` at the repo root.
+// Builds index.json from every `<Dir>/plugin.json` + `<Dir>/index.js` (+ optional `<Dir>/icon.png`) at the repo root.
 // Usage: node scripts/build-index.mjs [--check]
 //   --check  fail if the committed index.json is out of date (CI).
 import { createHash } from 'node:crypto';
@@ -80,6 +80,11 @@ function build() {
     validate(dir, manifest, codeBytes.toString('utf8'));
     if (ids.has(manifest.id)) throw new Error(`duplicate plugin id ${manifest.id}`);
     ids.add(manifest.id);
+    if (manifest.iconUrl !== undefined) throw new Error(`${dir}/plugin.json: iconUrl is gone; ship ${dir}/icon.png`);
+    const iconPath = join(full, 'icon.png');
+    const icon = existsSync(iconPath)
+      ? { iconUrl: `${dir}/icon.png`, iconSha256: sha256(readFileSync(iconPath)) }
+      : {};
     plugins.push({
       id: manifest.id,
       name: manifest.name || manifest.id,
@@ -87,11 +92,11 @@ function build() {
       version: manifest.version,
       apiVersion: manifest.apiVersion,
       lang: manifest.lang || '',
-      iconUrl: manifest.iconUrl || '',
       manifestUrl: `${dir}/plugin.json`,
       pluginUrl: `${dir}/index.js`,
       manifestSha256: sha256(manifestBytes),
       sha256: sha256(codeBytes),
+      ...icon,
     });
   }
   return JSON.stringify({ name: 'Flow Reader Official', apiVersion: HOST_API_VERSION, plugins }, null, 2) + '\n';

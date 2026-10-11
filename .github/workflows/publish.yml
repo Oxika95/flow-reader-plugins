@@ -44,6 +44,7 @@ jobs:
             if [ -f "$dir/plugin.json" ] && [ -f "$dir/index.js" ]; then
               mkdir -p "_site/$dir"
               cp "$dir/plugin.json" "$dir/index.js" "_site/$dir"
+              if [ -f "$dir/icon.png" ]; then cp "$dir/icon.png" "_site/$dir"; fi
             fi
           done
       - uses: actions/configure-pages@v5

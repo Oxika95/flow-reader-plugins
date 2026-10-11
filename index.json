@@ -6,27 +6,29 @@
       "id": "patreon",
       "name": "Patreon",
       "description": "Creators' Patreon posts as stories: collections and tags, with reading position and new-post alerts",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "apiVersion": 4,
       "lang": "en",
-      "iconUrl": "https://www.patreon.com/favicon.ico",
       "manifestUrl": "Patreon/plugin.json",
       "pluginUrl": "Patreon/index.js",
-      "manifestSha256": "922f52b693436d3fc6aa003ac562caef57f340b136af2167076fc24884844cfb",
-      "sha256": "31977f1a4c77e7fc868cc9158014065dd619867da88f31c056f603b7978177c8"
+      "manifestSha256": "bce0abe1c10fd50095e8855bc36525435c8c52e0acd3f52f552ff7198e13b3a4",
+      "sha256": "4d5b3eac24fcf41ff2e39e835d90bf0c51e3a2f606f0033287f76cc6baa58ec0",
+      "iconUrl": "Patreon/icon.png",
+      "iconSha256": "39f92e788cee25b5b5954f3919e8cd9185c451ddd5ae21c1115c4694da25b9b2"
     },
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "apiVersion": 4,
       "lang": "en",
-      "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "56cfaa9562a749d66f007e74bb0ce40363a3b928d6a22085005eea183c93a3dd",
-      "sha256": "fc6cb151af2403692ba43d73fc5919ef8be544cbf2b25c651195643c2829aaea"
+      "manifestSha256": "0575e693c1ae22da8f0290d18ee30cec59f732a8f7fb919ea59f6bea30adce12",
+      "sha256": "fc6cb151af2403692ba43d73fc5919ef8be544cbf2b25c651195643c2829aaea",
+      "iconUrl": "RoyalRoad/icon.png",
+      "iconSha256": "623b163b3e85de6bec94f79c186bf6bdba1d465bcfde2058d41d8cf56efdf43c"
     }
   ]
 }

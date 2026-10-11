@@ -468,6 +468,30 @@ function candidate(camp, kind, key, title, label, posts) {
   };
 }
 
+/** Name for a creator's All posts story: their largest collection, else largest tag, else the creator. */
+function allPostsTitle(camp, idx, cols) {
+  let best = null;
+  cols.forEach(function (c) {
+    const n = (c.postIds || []).filter(function (id) {
+      return idx.posts[id];
+    }).length;
+    if (n && c.title && (!best || n > best.n)) best = { n: n, title: c.title };
+  });
+  if (best) return best.title;
+  const counts = {};
+  Object.keys(idx.posts).forEach(function (id) {
+    (idx.posts[id].g || []).forEach(function (tag) {
+      const k = tag.toLowerCase();
+      if (!counts[k]) counts[k] = { n: 0, title: tag };
+      counts[k].n++;
+    });
+  });
+  Object.keys(counts).forEach(function (k) {
+    if (counts[k].n >= MIN_TAG_POSTS && (!best || counts[k].n > best.n)) best = counts[k];
+  });
+  return best ? best.title : camp.name;
+}
+
 /** Every story group a creator offers, All posts first: collections, then tags. */
 async function storyGroups(cid) {
   const camp = await campaign(cid);
@@ -1108,6 +1132,17 @@ module.exports = {
       });
     });
     let title = camp.name;
+    if (w.kind === 'all') {
+      let cols = await cachedCollections(w.cid);
+      if (!cols.length) {
+        try {
+          cols = await collections(w.cid);
+        } catch (e) {
+          cols = [];
+        }
+      }
+      title = allPostsTitle(camp, idx, cols);
+    }
     if (w.kind === 'collection') title = col ? col.title : 'Collection';
     if (w.kind === 'tag') {
       const tag = tagNames.filter(function (t) {

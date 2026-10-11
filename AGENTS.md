@@ -1,7 +1,8 @@
 # Agent guide: flow-reader-plugins
 
 Public repo: official source plugins for the Flow Reader Android app. Each top-level folder is one
-plugin (`plugin.json` + `index.js`, CommonJS, sandboxed QuickJS in the app). Published to GitHub
+plugin (`plugin.json` + `index.js`, CommonJS, sandboxed QuickJS in the app; optional `icon.png`
+tab icon: single-colour silhouette on a transparent background). Published to GitHub
 Pages as `index.json` on every push to `main`, so a push reaches users immediately.
 
 Start at [CONTEXT.md](CONTEXT.md): task routing and the release rules.

@@ -106,7 +106,7 @@ test('loadWork without chapters is a PARSE error', async () => {
   await assert.rejects(api.loadWork('1'), { code: 'PARSE' });
 });
 
-test('loadChapter strips watermarks and appends author notes', async () => {
+test('loadChapter strips watermarks and leaves out author notes by default', async () => {
   const url = `${ORIGIN}/fiction/1/demo/chapter/9/start`;
   const html = `<html><head><style>.csecret { display: none; speak: never; }</style></head><body>
     <h1 class="font-white">The First Day</h1>
@@ -127,17 +127,36 @@ test('loadChapter strips watermarks and appends author notes', async () => {
   assert.match(ch.html, /Hello/);
   assert.match(ch.html, /Second\./);
   assert.doesNotMatch(ch.html, /WATERMARK|Hidden inline|Next/);
-  assert.match(ch.html, /<h3>A note from Alice<\/h3>/);
-  assert.match(ch.html, /Note here\./);
+  assert.doesNotMatch(ch.html, /A note from Alice|Note here/);
 });
 
-test('loadChapter honours the authorNotes setting', async () => {
+test('loadChapter keeps author notes in page order when the authorNotes setting is on', async () => {
   const url = `${ORIGIN}/fiction/1/demo/chapter/9/start`;
-  const html = `<div class="chapter-inner"><p>Body.</p></div>
-    <div class="author-note-portlet"><div class="author-note"><p>Note here.</p></div></div>`;
-  const { api } = plugin({ [url]: html }, { settings: { authorNotes: false } });
+  const note = (who, text) => `<div class="portlet solid author-note-portlet">
+      <div class="portlet-title"><span class="caption-subject">A note from ${who}</span></div>
+      <div class="portlet-body author-note"><p>${text}</p></div>
+    </div>`;
+  const html = `<div class="portlet solid"><p>Sidebar.</p></div>
+    ${note('Alice', 'Before note.')}
+    <div class="chapter-inner"><p>Body.</p></div>
+    ${note('Alice', 'After note.')}`;
+  const { api } = plugin({ [url]: html }, { settings: { authorNotes: true } });
   const ch = await api.loadChapter({ title: 'x', url }, { id: '1', url: '' });
-  assert.doesNotMatch(ch.html, /Note here/);
+  const at = (s) => ch.html.indexOf(s);
+  assert.ok(at('Before note.') >= 0 && at('Before note.') < at('Body.') && at('Body.') < at('After note.'));
+  assert.equal(ch.html.match(/A note from Alice/g).length, 2);
+  assert.doesNotMatch(ch.html, /Sidebar/);
+});
+
+test('loadChapter falls back to bare author-note blocks', async () => {
+  const url = `${ORIGIN}/fiction/1/demo/chapter/9/start`;
+  const html = `<div class="author-note"><p>Before note.</p></div>
+    <div class="chapter-content"><p>Body.</p></div>
+    <div class="author-note"><p>After note.</p></div>`;
+  const { api } = plugin({ [url]: html }, { settings: { authorNotes: true } });
+  const ch = await api.loadChapter({ title: 'x', url }, { id: '1', url: '' });
+  const at = (s) => ch.html.indexOf(s);
+  assert.ok(at('Before note.') >= 0 && at('Before note.') < at('Body.') && at('Body.') < at('After note.'));
 });
 
 test('loadChapter accepts the older chapter-content wrapper and rejects missing bodies', async () => {

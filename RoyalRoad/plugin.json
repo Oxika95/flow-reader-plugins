@@ -2,7 +2,7 @@
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved Royal Road serials",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "apiVersion": 4,
   "site": "https://www.royalroad.com",
   "lang": "en",
@@ -25,7 +25,7 @@
       "type": "toggle",
       "label": "Include author notes",
       "description": "Append author notes after the chapter text",
-      "default": true
+      "default": false
     }
   ],
   "shareHosts": ["royalroad.com", "royalroadl.com"]

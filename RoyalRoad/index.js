@@ -461,37 +461,59 @@ function stripNav(root) {
   });
 }
 
-/** Author notes outside the chapter body (before or after it). */
-function authorNotes(doc, inner) {
-  const portlets = doc.select('div.author-note-portlet').filter(function (n) {
+/**
+ * Author notes outside the chapter body, split by page position: `before` the body or `after` it.
+ * `innerClass` is the class of [inner], the first such element on the page.
+ */
+function authorNotes(doc, inner, innerClass) {
+  const portlets = doc.select('div.author-note-portlet').some(function (n) {
     return !inner.contains(n);
   });
-  if (portlets.length) return portlets;
-  return doc.select('div.author-note').filter(function (n) {
-    if (inner.contains(n)) return false;
-    for (let p = n.parent(); p; p = p.parent()) {
-      if (p.hasClass('author-note-portlet')) return false;
+  const noteCss = portlets ? 'div.author-note-portlet' : 'div.author-note';
+  const notes = { before: [], after: [] };
+  let seenInner = false;
+  doc.select('div.' + innerClass + ', ' + noteCss).forEach(function (n) {
+    if (n.hasClass(innerClass)) {
+      seenInner = true;
+      return;
     }
-    return true;
+    if (inner.contains(n)) return;
+    if (!portlets) {
+      for (let p = n.parent(); p; p = p.parent()) {
+        if (p.hasClass('author-note-portlet')) return;
+      }
+    }
+    (seenInner ? notes.after : notes.before).push(n);
   });
+  return notes;
+}
+
+/** One author note as a heading ("A note from ...") plus its body, watermarks removed. */
+function noteHtml(note, pageHtml) {
+  stripWatermarks(note, pageHtml);
+  const caption = textOf(note.selectFirst('.caption-subject'));
+  const body = note.hasClass('author-note') ? note : note.selectFirst('div.author-note') || note;
+  return (caption ? '<h3>' + caption + '</h3>' : '') + body.html();
 }
 
 /** Cleaned chapter body HTML (plus author notes when enabled), or null if the wrapper is missing. */
 function chapterHtml(pageHtml, pageUrl, includeNotes) {
   const doc = flow.html.parse(pageHtml, pageUrl);
-  const inner = doc.selectFirst('div.chapter-inner') || doc.selectFirst('div.chapter-content');
+  const innerClass = doc.selectFirst('div.chapter-inner') ? 'chapter-inner' : 'chapter-content';
+  const inner = doc.selectFirst('div.' + innerClass);
   if (!inner) return null;
   stripWatermarks(inner, pageHtml);
   stripNav(inner);
   let html = inner.html();
   if (includeNotes) {
-    authorNotes(doc, inner).forEach(function (note) {
-      stripWatermarks(note, pageHtml);
-      html += '<hr/>';
-      const caption = textOf(note.selectFirst('.caption-subject'));
-      if (caption) html += '<h3>' + caption + '</h3>';
-      html += note.html();
+    const notes = authorNotes(doc, inner, innerClass);
+    const before = notes.before.map(function (note) {
+      return noteHtml(note, pageHtml) + '<hr/>';
     });
+    const after = notes.after.map(function (note) {
+      return '<hr/>' + noteHtml(note, pageHtml);
+    });
+    html = before.join('') + html + after.join('');
   }
   const title = textOf(doc.selectFirst('h1.font-white, div.fic-header h1, h1'));
   return { title: title, html: html, text: inner.text().trim() };
@@ -576,7 +598,7 @@ module.exports = {
     const referer = fictionUrlFrom(chapter.url) || (work && work.url) || lastPageUrl;
     // Signed-in chapter views move the site's "Last read"; downloads must not.
     const res = await getPage(chapter.url, { referer: referer, cookies: false, authCheck: false });
-    const includeNotes = flow.settings.authorNotes !== false;
+    const includeNotes = flow.settings.authorNotes === true;
     const parsed = chapterHtml(res.text, res.url, includeNotes);
     if (!parsed) throw flow.error('PARSE', 'Could not find chapter text. Royal Road markup may have changed.');
     if (!parsed.text) throw flow.error('PARSE', 'Chapter page had no readable text');

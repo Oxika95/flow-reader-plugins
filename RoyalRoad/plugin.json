@@ -2,7 +2,7 @@
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved Royal Road serials",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "apiVersion": 5,
   "kind": "source",
   "site": "https://www.royalroad.com",

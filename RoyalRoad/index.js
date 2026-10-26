@@ -103,6 +103,12 @@ async function getPage(url, opts) {
   if (res.status < 200 || res.status >= 300) {
     throw flow.error('NETWORK', 'Royal Road returned HTTP ' + res.status);
   }
+  if (looksLikeAnubis(res.text)) {
+    throw flow.error(
+      'NETWORK',
+      'Royal Road blocked the request (bot check). Open the Royal Road tab and try again.',
+    );
+  }
   if (opts.authCheck !== false && !/\/account\/login/i.test(url) && looksLikeLoginPage(res.text)) {
     try {
       await flow.secrets.set('loggedIn', 'false');
@@ -124,6 +130,10 @@ function isLoggedInHtml(html) {
 
 function looksLikeLoginPage(html) {
   return html.indexOf('form-login-details') >= 0 && !isLoggedInHtml(html);
+}
+
+function looksLikeAnubis(html) {
+  return html.indexOf('id="anubis_challenge"') >= 0 || html.indexOf("id='anubis_challenge'") >= 0;
 }
 
 async function isSignedIn() {

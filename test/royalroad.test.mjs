@@ -326,6 +326,14 @@ test('loadChapter fetches without cookies so downloads never move Last read', as
   assert.equal(requests[0].cookies, false);
 });
 
+test('getPage rejects Anubis bot-check HTML as NETWORK', async () => {
+  const anubis =
+    '<!doctype html><html><head><title>Making sure you\'re not a bot!</title>' +
+    '<script id="anubis_challenge" type="application/json">{"method":"argon2id"}</script></head></html>';
+  const { api } = plugin({ [`${ORIGIN}/fiction/1`]: anubis });
+  await assert.rejects(api.loadWork('1'), { code: 'NETWORK', message: /bot check/i });
+});
+
 test('resolveUrl extracts fiction ids and follows short chapter links', async () => {
   const { api } = plugin({
     [`${ORIGIN}/fiction/chapter/99`]: {

@@ -13,7 +13,7 @@
       "manifestUrl": "EdgeTts/plugin.json",
       "pluginUrl": "EdgeTts/index.js",
       "manifestSha256": "6e2e212047a58188a82ec10a4c91c378d2742fa87a2cf55df75718446683ecb2",
-      "sha256": "2987c66709146e40df3472b6b6065b99157a06b3221402c3269fa0b9df4884d7"
+      "sha256": "4df037399ddd0df17fcad78f2a7cd82ee6a2a44fa9e7f6e13296bd9cfb6fce27"
     },
     {
       "id": "patreon",
@@ -34,14 +34,14 @@
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.4.4",
+      "version": "1.4.5",
       "apiVersion": 5,
       "kind": "source",
       "lang": "en",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "8f4c9db241eb8d92cacc94c575c8430c242f02b2d519a4ff178f90db3d9b58f5",
-      "sha256": "8b1edf3eba9800b46c139d4188839c25c594d3270c4e1780dbaaf8f2a7063b0f",
+      "manifestSha256": "8b470170dc581788d239c5de3d02d8a5ea22ac29aaa0b4f4571490fad33356bf",
+      "sha256": "9c7a9d8fbf16ae80107c5a3e2179d6d03f0332cf05bddcd215fe65cc012ded31",
       "iconUrl": "RoyalRoad/icon.png",
       "iconSha256": "623b163b3e85de6bec94f79c186bf6bdba1d465bcfde2058d41d8cf56efdf43c"
     }

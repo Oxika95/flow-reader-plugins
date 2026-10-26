@@ -1,0 +1,21 @@
+---
+description: Edge TTS plugin — Readest is upstream; do not reinvent handshake/GEC
+globs: EdgeTts/**,test/edgetts.test.mjs
+alwaysApply: false
+---
+
+# Edge TTS (`EdgeTts/`)
+
+**Upstream (hard requirement):** Readest’s Edge TTS client is the source of truth for handshake,
+Sec-MS-GEC v2, URL/query order, headers, and speech framing. Before changing this plugin, open and
+follow:
+
+https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts
+
+Raw-socket WebSocket upgrade (when HTTP clients get status 200 instead of 101) mirrors:
+
+https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts
+
+(App host: `flow-reader` `PluginWs.kt` — keep aligned with that Workers path.)
+
+Do not invent a parallel DRM/handshake. Port Readest; bump `plugin.json` `version` when shipping.

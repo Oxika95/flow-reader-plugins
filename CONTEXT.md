@@ -5,6 +5,7 @@ out beside this one as `../flow-reader`.
 
 | Task | Load | Section/Scope |
 | --- | --- | --- |
+| Edge TTS (handshake, GEC, synth, voices) | `EdgeTts/`, `.cursor/rules/edgetts.mdc`, then [Readest edgeTTS.ts](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts) (+ [workersWebSocket.ts](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts) for raw WS) | Port upstream; do not reinvent |
 | Change a plugin's parsing or fetching | `<Plugin>/index.js`, `test/<plugin>.test.mjs` | Functions involved |
 | Add a function or capability | `../flow-reader/docs/plugins/api-functions.md`, `api-features.md` | The function's section |
 | Change `plugin.json` | `../flow-reader/docs/plugins/api-manifest.md` | Field table |

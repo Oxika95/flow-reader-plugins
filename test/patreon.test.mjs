@@ -189,7 +189,7 @@ test('manifest matches the app contract', () => {
   const { manifest } = plugin();
   assert.equal(manifest.id, 'patreon');
   assert.equal(manifest.bookIdPrefix, 'pt');
-  assert.equal(manifest.apiVersion, 4);
+  assert.equal(manifest.apiVersion, 5);
   assert.deepEqual(manifest.auth.web, { url: 'https://www.patreon.com/login', doneCookie: 'session_id' });
   assert.deepEqual(manifest.lists.map((l) => [l.id, l.kind || 'stories', !!l.syncable, !!l.notifyDefault]), [
     ['follow', 'stories', false, true],

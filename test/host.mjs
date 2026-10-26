@@ -1,6 +1,7 @@
-// Node stand-in for the Flow Reader plugin host (`flow` global, apiVersion 4).
+// Node stand-in for the Flow Reader plugin host (`flow` global, apiVersion 5).
 // Mirrors app/src/main/java/com/personal/flowreader/plugin/runtime: fetch returns non-2xx instead
 // of throwing, HTML nodes follow Jsoup semantics (normalized text, `abs:` attributes).
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import vm from 'node:vm';
@@ -85,7 +86,7 @@ function makeHtml() {
  * Load a plugin directory. [routes] maps a request `(url, opts)` to `{ status?, url?, text }`
  * or null for a 404.
  */
-export function loadPlugin(dir, { routes = () => null, settings = {}, secrets = {} } = {}) {
+export function loadPlugin(dir, { routes = () => null, wsCollect = null, settings = {}, secrets = {} } = {}) {
   const manifest = JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8'));
   const code = readFileSync(join(dir, 'index.js'), 'utf8');
   const secretStore = new Map(Object.entries(secrets));
@@ -143,6 +144,25 @@ export function loadPlugin(dir, { routes = () => null, settings = {}, secrets = 
     cookies: {
       async clear() {
         cookiesCleared++;
+      },
+    },
+    crypto: {
+      sha256(inputBase64) {
+        const buf = Buffer.from(String(inputBase64), 'base64');
+        return createHash('sha256').update(buf).digest('base64');
+      },
+      sha256Hex(inputHex) {
+        const hex = String(inputHex).toLowerCase().replace(/[^0-9a-f]/g, '');
+        return createHash('sha256').update(Buffer.from(hex, 'hex')).digest('hex');
+      },
+    },
+    ws: {
+      async collect(opts = {}) {
+        const url = opts.url || '';
+        const host = new URL(url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:')).host;
+        if (!isAllowed(host)) throw error('BLOCKED', 'Host not allowed by plugin manifest: ' + host);
+        if (typeof wsCollect === 'function') return wsCollect(opts);
+        throw error('UNSUPPORTED', 'flow.ws.collect is not mocked in this test');
       },
     },
     error,

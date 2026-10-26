@@ -8,10 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Plugin contract range the app accepts (app: PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION).
-const HOST_API_VERSION = 4;
-const MIN_API_VERSION = 4;
+const HOST_API_VERSION = 5;
+const MIN_API_VERSION = 5;
 const ID = /^[a-z0-9][a-z0-9_-]{1,39}$/;
-const CAPABILITIES = new Set(['search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates', 'browse']);
+const SOURCE_CAPABILITIES = new Set([
+  'search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates', 'browse',
+]);
+const TTS_CAPABILITIES = new Set(['clipAudio', 'wordBoundaries', 'prefetch', 'networkLanes']);
 const LIST_KINDS = new Set(['stories', 'browse']);
 const REQUIRED_FUNCTIONS = {
   search: ['search'],
@@ -22,6 +25,10 @@ const REQUIRED_FUNCTIONS = {
   resolveUrl: ['resolveUrl'],
   updates: ['checkUpdates'],
   browse: ['browse'],
+  clipAudio: ['synthesize'],
+  wordBoundaries: [],
+  prefetch: [],
+  networkLanes: [],
 };
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -39,20 +46,34 @@ function validate(dir, manifest, code) {
     fail(`apiVersion must be an integer from ${MIN_API_VERSION} to ${HOST_API_VERSION}`);
   }
   if (!Array.isArray(manifest.allowedHosts) || manifest.allowedHosts.length === 0) fail('allowedHosts is required');
+  const kind = manifest.kind || 'source';
+  if (kind !== 'source' && kind !== 'tts') fail(`unknown kind "${kind}"`);
+
+  if (kind === 'tts') {
+    for (const cap of manifest.capabilities || []) {
+      if (!TTS_CAPABILITIES.has(cap)) fail(`unknown TTS capability "${cap}"`);
+      for (const fn of REQUIRED_FUNCTIONS[cap] || []) {
+        if (!new RegExp(`\\b${fn}\\s*\\(`).test(code)) fail(`capability "${cap}" needs function ${fn}()`);
+      }
+    }
+    if (!new RegExp(`\\blistVoices\\s*\\(`).test(code)) fail('TTS plugin needs listVoices()');
+    if (!new RegExp(`\\bsynthesize\\s*\\(`).test(code)) fail('TTS plugin needs synthesize()');
+    return;
+  }
+
   const web = manifest.auth && manifest.auth.web;
   if (web && (!/^https:\/\//.test(web.url || '') || !web.doneCookie)) fail('auth.web needs an https url and doneCookie');
   for (const cap of manifest.capabilities || []) {
-    if (!CAPABILITIES.has(cap)) fail(`unknown capability "${cap}"`);
-    // Web sign-in happens in the app's browser; login(fields) is never called.
+    if (!SOURCE_CAPABILITIES.has(cap)) fail(`unknown capability "${cap}"`);
     const required = cap === 'auth' && web ? ['logout', 'session'] : REQUIRED_FUNCTIONS[cap];
     for (const fn of required) {
       if (!new RegExp(`\\b${fn}\\s*\\(`).test(code)) fail(`capability "${cap}" needs function ${fn}()`);
     }
   }
   for (const list of manifest.lists || []) {
-    const kind = list.kind || 'stories';
-    if (!LIST_KINDS.has(kind)) fail(`list "${list.id}" has unknown kind "${kind}"`);
-    if (kind === 'browse' && !(manifest.capabilities || []).includes('browse')) {
+    const listKind = list.kind || 'stories';
+    if (!LIST_KINDS.has(listKind)) fail(`list "${list.id}" has unknown kind "${listKind}"`);
+    if (listKind === 'browse' && !(manifest.capabilities || []).includes('browse')) {
       fail(`list "${list.id}" is a browse list but the "browse" capability is missing`);
     }
   }
@@ -73,7 +94,6 @@ function build() {
     const manifestBytes = readFileSync(manifestPath);
     const codeBytes = readFileSync(codePath);
     for (const [name, bytes] of [['plugin.json', manifestBytes], ['index.js', codeBytes]]) {
-      // Pages serves the committed (LF) bytes; a CRLF working copy would hash differently.
       if (bytes.includes('\r\n')) throw new Error(`${dir}/${name}: use LF line endings`);
     }
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
@@ -91,6 +111,7 @@ function build() {
       description: manifest.description || '',
       version: manifest.version,
       apiVersion: manifest.apiVersion,
+      kind: manifest.kind || 'source',
       lang: manifest.lang || '',
       manifestUrl: `${dir}/plugin.json`,
       pluginUrl: `${dir}/index.js`,

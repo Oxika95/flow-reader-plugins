@@ -6,14 +6,14 @@
       "id": "edgetts",
       "name": "Edge TTS",
       "description": "Microsoft Edge Read Aloud neural voices",
-      "version": "1.0.4",
+      "version": "1.0.6",
       "apiVersion": 5,
       "kind": "tts",
       "lang": "",
       "manifestUrl": "EdgeTts/plugin.json",
       "pluginUrl": "EdgeTts/index.js",
-      "manifestSha256": "6e2e212047a58188a82ec10a4c91c378d2742fa87a2cf55df75718446683ecb2",
-      "sha256": "4df037399ddd0df17fcad78f2a7cd82ee6a2a44fa9e7f6e13296bd9cfb6fce27"
+      "manifestSha256": "4714b3258c801e712170ebd41af34cdf208f3b66e2956de406af96314f2083df",
+      "sha256": "d0a6c8a7d6123c58e5f15de0e5428f15ee1128c9d609ac2f06f2423a5e87584a"
     },
     {
       "id": "patreon",

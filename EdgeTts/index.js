@@ -290,6 +290,11 @@ function voiceLabel(v, id, locale) {
   return id + localeBit;
 }
 
+function normalizeGender(raw) {
+  const g = String(raw || '').trim().toLowerCase();
+  return g === 'male' || g === 'female' ? g : '';
+}
+
 function parseVoiceList(text) {
   const raw = JSON.parse(text);
   return (Array.isArray(raw) ? raw : []).map((v) => {
@@ -300,6 +305,7 @@ function parseVoiceList(text) {
       label: voiceLabel(v, id, locale),
       language: languageLabel(locale),
       langTag: locale,
+      gender: normalizeGender(v.Gender),
     };
   }).filter((v) => v.id);
 }
@@ -318,12 +324,20 @@ async function fetchVoiceList() {
   throw flow.error('NETWORK', `voices list status ${res.status}`);
 }
 
+function cacheHasGender(voices) {
+  return voices.some((v) => {
+    const g = String((v && v.gender) || '').toLowerCase();
+    return g === 'male' || g === 'female';
+  });
+}
+
 async function listVoices() {
   const cached = await flow.storage.get('voices.json');
   if (cached) {
     try {
       const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length >= 50) return parsed;
+      // Old caches omit gender; refetch so Settings Gender filter can work.
+      if (Array.isArray(parsed) && parsed.length >= 50 && cacheHasGender(parsed)) return parsed;
     } catch (_) {}
   }
   let text;

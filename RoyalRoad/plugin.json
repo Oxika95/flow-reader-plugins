@@ -2,7 +2,7 @@
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved Royal Road serials",
-  "version": "1.4.5",
+  "version": "1.5.1",
   "apiVersion": 5,
   "kind": "source",
   "site": "https://www.royalroad.com",
@@ -20,6 +20,12 @@
     "web": { "url": "https://www.royalroad.com/account/login", "doneCookie": ".AspNetCore.Identity.Application" },
     "note": "Sign in on Royal Road's own page. Flow Reader keeps the session cookies, never your password."
   },
+  "sitePages": [
+    { "title": "Sign in", "url": "https://www.royalroad.com/account/login" },
+    { "title": "Follows", "url": "https://www.royalroad.com/my/follows", "listId": "follow" },
+    { "title": "Favorites", "url": "https://www.royalroad.com/my/favorites", "listId": "favorite" },
+    { "title": "Read Later", "url": "https://www.royalroad.com/my/readlater", "listId": "readlater" }
+  ],
   "settings": [
     {
       "key": "authorNotes",

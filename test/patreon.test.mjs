@@ -240,6 +240,35 @@ test('loadWork builds a tag story oldest first with stable post URLs', async () 
   assert.deepEqual(work.card.stats[0], { icon: 'pages', value: '2', label: 'Posts' });
 });
 
+test('loadWork serves partial posts when the creator index is still incomplete', async () => {
+  const p = plugin({ settings: { lockedPosts: 'hide' } });
+  const posts = {};
+  for (const x of basePosts()) {
+    if (x.attributes.post_type === 'poll') continue;
+    posts[x.id] = {
+      t: x.attributes.title,
+      p: x.attributes.published_at,
+      y: x.attributes.post_type,
+      g: x.relationships.user_defined_tags.data.map((t) => t.id.replace(/^user_defined;/, '')),
+      c: x.relationships.collections.data.map((c) => String(c.id)),
+      v: !!x.attributes.current_user_can_view,
+      e: !!x.attributes.current_user_can_view,
+    };
+  }
+  p.storage.set(
+    `idx:${CID}`,
+    JSON.stringify({
+      posts,
+      complete: false,
+      cursor: `${ORIGIN}/api/posts?page%5Bcursor%5D=more`,
+      fullAt: 0,
+    }),
+  );
+  const work = await p.api.loadWork(CID);
+  assert.ok(work.chapters.length >= 1, 'partial index should still open');
+  assert.doesNotMatch(work.title || '', /Try again/i);
+});
+
 test('series ids are not Patreon story ids', async () => {
   await assert.rejects(plugin().api.loadWork(`${CID}.sabc`), { code: 'PARSE' });
 });

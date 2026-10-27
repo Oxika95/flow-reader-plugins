@@ -14,8 +14,12 @@ const API = ORIGIN + '/api';
 const HOSTS = ['patreon.com', 'www.patreon.com'];
 const POST_FIELDS = 'title,url,published_at,current_user_can_view,post_type';
 const PAGE_SIZE = 200;
-/** Time one call may spend paging a creator's posts; the rest continues on the next call. */
+/** Time one background/update call may spend paging a creator's posts; resumes next call. */
 const INDEX_BUDGET_MS = 35000;
+/** Interactive opens (`loadWork`) may spend longer so large creators don't need several retries. */
+const INDEX_BUDGET_INTERACTIVE_MS = 120000;
+/** Extra interactive rounds if the first budget still left the index empty for this story. */
+const INDEX_INTERACTIVE_ROUNDS = 3;
 /** A full re-read of a creator's posts (tier changes) at most this often. */
 const RESCAN_MS = 7 * 24 * 60 * 60 * 1000;
 const MIN_TAG_POSTS = 2;
@@ -379,7 +383,7 @@ function mergePosts(idx, data, included) {
 async function refreshIndex(cid, opts) {
   opts = opts || {};
   const idx = await loadIndex(cid);
-  const deadline = Date.now() + INDEX_BUDGET_MS;
+  const deadline = Date.now() + (opts.budgetMs || INDEX_BUDGET_MS);
   const maxPages = opts.maxPages || 1000;
   const full = !opts.quick && (!idx.complete || Date.now() - idx.fullAt > RESCAN_MS);
   const resume = full && !!idx.cursor;
@@ -1100,7 +1104,6 @@ module.exports = {
   async loadWork(workId) {
     const w = parseWorkId(workId);
     const camp = await campaign(w.cid);
-    const idx = await refreshIndex(w.cid);
     let col = null;
     let colIds = null;
     if (w.kind === 'collection') {
@@ -1120,7 +1123,16 @@ module.exports = {
         });
       }
     }
-    const posts = selectPosts(idx, w, colIds);
+    // Interactive budget: finish or gather enough posts in one open; serve partial ToCs when any
+    // selectable posts exist so the user is not stuck retrying.
+    let idx = await refreshIndex(w.cid, { budgetMs: INDEX_BUDGET_INTERACTIVE_MS });
+    let posts = selectPosts(idx, w, colIds);
+    for (let round = 0; !posts.length && !idx.complete && round < INDEX_INTERACTIVE_ROUNDS; round++) {
+      const cursor = idx.cursor;
+      idx = await refreshIndex(w.cid, { budgetMs: INDEX_BUDGET_INTERACTIVE_MS });
+      posts = selectPosts(idx, w, colIds);
+      if (idx.cursor === cursor && !idx.complete) break;
+    }
     if (!posts.length) {
       throw flow.error('PARSE', idx.complete ? 'This story has no posts you can read' : 'Still reading this creator\'s posts. Try again.');
     }

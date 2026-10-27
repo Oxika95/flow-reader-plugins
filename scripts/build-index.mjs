@@ -63,6 +63,15 @@ function validate(dir, manifest, code) {
 
   const web = manifest.auth && manifest.auth.web;
   if (web && (!/^https:\/\//.test(web.url || '') || !web.doneCookie)) fail('auth.web needs an https url and doneCookie');
+  const listIds = new Set((manifest.lists || []).map((l) => l.id));
+  for (const page of manifest.sitePages || []) {
+    if (!page || !String(page.title || '').trim() || !/^https:\/\//.test(page.url || '')) {
+      fail('sitePages entries need a title and https url');
+    }
+    if (page.listId && !listIds.has(page.listId)) {
+      fail(`sitePages listId "${page.listId}" is not a list id`);
+    }
+  }
   for (const cap of manifest.capabilities || []) {
     if (!SOURCE_CAPABILITIES.has(cap)) fail(`unknown capability "${cap}"`);
     const required = cap === 'auth' && web ? ['logout', 'session'] : REQUIRED_FUNCTIONS[cap];

@@ -25,6 +25,8 @@ const MAX_FOLLOW_PAGES = 10;
 const FOLLOWS_TTL_MS = 2 * 60 * 1000;
 
 let followsCache = null;
+/** In-progress Follows merge while `list('follow')` pages; committed to [followsCache] when done. */
+let followsAccum = null;
 
 /** Last in-site page, sent as Referer on the next request. */
 let lastPageUrl = ORIGIN;
@@ -78,6 +80,202 @@ function listUrl(listId, page) {
   return path ? ORIGIN + path + '?page=' + Math.max(1, page) : null;
 }
 
+function listLabel(listId) {
+  return { follow: 'Follows', favorite: 'Favorites', readlater: 'Read Later' }[listId] || listId;
+}
+
+/** Count case-insensitive needle occurrences (rough CSS class / marker probe). */
+function countNeedle(haystack, needle) {
+  const s = String(haystack || '');
+  const n = String(needle || '');
+  if (!n) return 0;
+  let c = 0;
+  let i = 0;
+  const lower = s.toLowerCase();
+  const want = n.toLowerCase();
+  while (true) {
+    const at = lower.indexOf(want, i);
+    if (at < 0) return c;
+    c++;
+    i = at + want.length;
+  }
+}
+
+function pageTitle(html) {
+  const m = /<title[^>]*>([^<]{1,120})/i.exec(String(html || ''));
+  return m ? m[1].replace(/\s+/g, ' ').trim() : '';
+}
+
+/**
+ * Class / structure clues when fiction-list-item is missing (RR redesign).
+ * Kept short for the Plugins debug channel.
+ */
+function markupProbe(html) {
+  const text = String(html || '');
+  const classes = {};
+  const re = /class\s*=\s*"([^"]{1,200})"/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    m[1].split(/\s+/).forEach(function (c) {
+      if (!c) return;
+      const low = c.toLowerCase();
+      if (
+        /fiction|follow|favor|bookmark|read.?later|list|card|row|portlet|title|author|chapter|cover|user-cp/.test(
+          low,
+        )
+      ) {
+        classes[c] = (classes[c] || 0) + 1;
+      }
+    });
+  }
+  const ranked = Object.keys(classes)
+    .sort(function (a, b) {
+      return classes[b] - classes[a];
+    })
+    .slice(0, 40)
+    .map(function (c) {
+      return c + '×' + classes[c];
+    });
+  const fictionLinks = countNeedle(text, '/fiction/');
+  return (
+    'fictionLinks≈' +
+    fictionLinks +
+    (ranked.length ? ' classes=[' + ranked.join(', ') + ']' : ' classes=[]')
+  );
+}
+
+/** Truncated parent snippets around the first N /fiction/N/ links. */
+function fictionLinkSamples(html, limit) {
+  const text = String(html || '');
+  const out = [];
+  const re = /href\s*=\s*"(\/fiction\/\d+\/[^"]*)"/gi;
+  let m;
+  while ((m = re.exec(text)) && out.length < (limit || 3)) {
+    const at = m.index;
+    const start = Math.max(0, at - 180);
+    const end = Math.min(text.length, at + m[0].length + 220);
+    out.push(text.slice(start, end).replace(/\s+/g, ' '));
+  }
+  return out;
+}
+
+/**
+ * Human fingerprint of a list/HTML response for Plugins debug (via flow.log → host channel).
+ */
+function describeHtml(html, pageUrl) {
+  const text = String(html || '');
+  const flags = [];
+  if (looksLikeAnubis(text)) flags.push('bot-check');
+  if (looksLikeLoginPage(text)) flags.push('login-page');
+  if (isLoggedInHtml(text)) flags.push('logged-in');
+  if (looksLikeEmptyListPage(text)) flags.push('empty-list-copy');
+  const name = accountName(text);
+  const uid = (USER_ID.exec(text) || [])[1];
+  if (name) flags.push('user=' + name);
+  else if (uid) flags.push('userId=' + uid);
+  const modernCards = countNeedle(text, 'follow-update-card');
+  if (modernCards > 0) flags.push('follow-update-card≈' + modernCards);
+  const expandedCards = countNeedle(text, 'fiction-card-expanded');
+  if (expandedCards > 0) flags.push('fiction-card-expanded≈' + expandedCards);
+  const items = countNeedle(text, 'fiction-list-item');
+  if (items > 0) flags.push('fiction-list-item≈' + items);
+  else if (
+    modernCards === 0 &&
+    expandedCards === 0 &&
+    text.toLowerCase().indexOf('fiction-list') >= 0
+  ) {
+    flags.push('fiction-list-shell');
+  }
+  if (text.toLowerCase().indexOf('portlet') >= 0) flags.push('portlet');
+  const title = pageTitle(text);
+  return (
+    'packet: ' +
+    (flags.length ? flags.join(',') : 'unrecognized') +
+    (title ? ' title="' + title + '"' : '') +
+    ' bytes=' +
+    text.length +
+    (pageUrl ? ' url=' + pageUrl : '')
+  );
+}
+
+/**
+ * Shared body of `list` / `listFromHtml`: parse fiction-list HTML and refuse bot-check / shell
+ * pages so Overwrite never wipes a local library from empty garbage.
+ */
+async function listFromHtmlBody(listId, html, pageUrl, page) {
+  const label = listLabel(listId);
+  flow.log('Parsing ' + label + ' page ' + page + '… ' + describeHtml(html, pageUrl));
+  const parsed = parseFictionList(html, pageUrl);
+  const sample = parsed.items
+    .slice(0, 3)
+    .map(function (w) {
+      return w.title || w.id;
+    })
+    .join('; ');
+  flow.log(
+    label +
+      ' page ' +
+      page +
+      ' → ' +
+      parsed.items.length +
+      ' stories parsed' +
+      (sample ? ' (e.g. ' + sample + ')' : ''),
+  );
+  if (!parsed.items.length) {
+    if (looksLikeAnubis(html)) {
+      flow.log(label + ' page looks like a bot-check — refusing empty result');
+      throw flow.error(
+        'NETWORK',
+        'Royal Road blocked the request (bot check). Open the list page from Account → Site, wait for it to load, then tap Done.',
+      );
+    }
+    if (!isLoggedInHtml(html)) {
+      flow.log(label + ' page is not a signed-in session (login wall or guest shell)');
+      try {
+        await flow.secrets.set('loggedIn', 'false');
+      } catch (e) {
+        // Encrypted storage unavailable; the error below still reaches the app.
+      }
+      throw flow.error('AUTH_REQUIRED', 'Your Royal Road session expired. Sign in again.');
+    }
+    if (!looksLikeEmptyListPage(html)) {
+      flow.log(
+        label +
+          ' signed-in but 0 fiction rows parsed — markup miss or wrong page body. ' +
+          describeHtml(html, pageUrl),
+      );
+      flow.log(label + ' markup probe: ' + markupProbe(html));
+      try {
+        await flow.storage.set(
+          'debug:list:' + listId,
+          JSON.stringify({
+            at: Date.now(),
+            url: pageUrl || '',
+            len: String(html || '').length,
+            head: String(html || '').slice(0, 1500),
+            probe: markupProbe(html),
+            samples: fictionLinkSamples(html, 5),
+          }),
+        );
+      } catch (e) {
+        // ignore
+      }
+      throw flow.error(
+        'PARSE',
+        'Could not read your Royal Road ' +
+          listId +
+          ' list from ' +
+          (pageUrl || '') +
+          '. Open the list page from Account → Site and tap Done.',
+      );
+    }
+    flow.log(label + ' page looks intentionally empty (site empty-list copy)');
+  }
+  const hasMore = parsed.items.length > 0 && hasNextPage(parsed.doc, page);
+  if (listId === 'follow') warmFollowsFromList(parsed.doc, page, hasMore);
+  return { items: parsed.items, hasMore: hasMore };
+}
+
 // --- HTTP -------------------------------------------------------------------------------------
 
 async function request(url, opts) {
@@ -106,7 +304,7 @@ async function getPage(url, opts) {
   if (looksLikeAnubis(res.text)) {
     throw flow.error(
       'NETWORK',
-      'Royal Road blocked the request (bot check). Open the Royal Road tab and try again.',
+      'Royal Road blocked the request (bot check). Open site from Account, wait for the page to load, then tap Done and Sync now.',
     );
   }
   if (opts.authCheck !== false && !/\/account\/login/i.test(url) && looksLikeLoginPage(res.text)) {
@@ -133,7 +331,23 @@ function looksLikeLoginPage(html) {
 }
 
 function looksLikeAnubis(html) {
-  return html.indexOf('id="anubis_challenge"') >= 0 || html.indexOf("id='anubis_challenge'") >= 0;
+  if (html.indexOf('id="anubis_challenge"') >= 0 || html.indexOf("id='anubis_challenge'") >= 0) return true;
+  const lower = String(html || '').toLowerCase();
+  if (lower.indexOf("making sure you're not a bot") >= 0 || lower.indexOf('making sure youre not a bot') >= 0) {
+    return true;
+  }
+  return lower.indexOf('proof of work') >= 0 && (lower.indexOf('anubis') >= 0 || lower.indexOf('techaro') >= 0);
+}
+
+/**
+ * True when an empty Follows/Favorites/Read Later page looks intentional.
+ * Do NOT treat "logged in + fiction-list CSS" alone as empty — a bot-check shell or a markup
+ * change would also match and wipe the library on Overwrite.
+ */
+function looksLikeEmptyListPage(html) {
+  return /not following any|don'?t have any|no fictions|haven'?t (favorited|bookmarked|added)|nothing (here|to show)|your list is empty/i.test(
+    String(html || ''),
+  );
 }
 
 async function isSignedIn() {
@@ -146,19 +360,65 @@ function textOf(node) {
   return node ? node.text().trim() : '';
 }
 
+/**
+ * Story rows on list pages.
+ * - Follows (Oct 2026): `follow-update-card`
+ * - Favorites / Read Later (Oct 2026): `fiction-card-expanded`
+ * - Browse / search / older HTML: `fiction-list-item`
+ */
+function listRowNodes(doc) {
+  const follows = doc.select('div.follow-update-card');
+  if (follows.length) return follows;
+  const cards = doc.select('div.fiction-card-expanded');
+  if (cards.length) return cards;
+  const alt = doc.select('div[class*="-update-card"], div[class*="fiction-card"]');
+  if (alt.length) return alt;
+  return doc.select('div.fiction-list-item');
+}
+
+/**
+ * Fiction title link on a row (not a chapter URL).
+ * Follows: `h2 > a`. Favorites/Read Later: `a > h2` (sometimes `data-vt-trigger="fiction-card"`).
+ */
+function rowTitleLink(item) {
+  const triggered = item.selectFirst('a[data-vt-trigger="fiction-card"]');
+  if (triggered && fictionId(triggered.attr('href') || triggered.attr('abs:href'))) return triggered;
+  const h2Child = item.selectFirst('h2 a[href*="/fiction/"]');
+  if (h2Child && !/\/chapter\//i.test(h2Child.attr('href') || '')) return h2Child;
+  const legacy = item.selectFirst('h2.fiction-title a');
+  if (legacy) return legacy;
+  const h2 = item.selectFirst('h2');
+  if (h2) {
+    const parent = h2.parent();
+    const href = parent ? parent.attr('href') || '' : '';
+    if (/\/fiction\//i.test(href) && !/\/chapter\//i.test(href) && fictionId(href)) return parent;
+  }
+  const links = item.select('a[href*="/fiction/"]');
+  for (let i = 0; i < links.length; i++) {
+    const href = links[i].attr('href') || '';
+    if (/\/chapter\//i.test(href)) continue;
+    if (!fictionId(href)) continue;
+    if (textOf(links[i]) || links[i].selectFirst('h2')) return links[i];
+  }
+  return null;
+}
+
 function parseFictionList(html, pageUrl) {
   const doc = flow.html.parse(html, pageUrl);
   const out = [];
   const seen = {};
-  doc.select('div.fiction-list-item').forEach(function (item) {
-    const a = item.selectFirst('h2.fiction-title a') || item.selectFirst('a[href*="/fiction/"]');
+  listRowNodes(doc).forEach(function (item) {
+    const a = rowTitleLink(item);
     if (!a) return;
     const url = a.attr('abs:href');
     const id = fictionId(url);
-    const title = a.text().trim();
+    const title = (a.attr('title') || a.text()).trim();
     if (!id || !title || seen[id]) return;
     seen[id] = true;
-    const author = textOf(item.selectFirst('span.author a, h4 a, span.author')).replace(/^by\s*/i, '');
+    const authorNode =
+      item.selectFirst('a[href*="/profile/"]') ||
+      item.selectFirst('span.author a, h4 a, span.author');
+    const author = textOf(authorNode).replace(/^by\s*/i, '');
     let latest = '';
     item.select('div.stats span').some(function (s) {
       const t = s.text().trim();
@@ -168,10 +428,34 @@ function parseFictionList(html, pageUrl) {
       }
       return false;
     });
-    const img = item.selectFirst('img[data-type="cover"], figure img, img.img-responsive');
-    let cover = img ? img.attr('abs:src') : '';
-    if (/nocover/i.test(cover)) cover = '';
-    out.push({ id: id, title: title, url: fictionUrlFrom(url) || url, author: author, cover: cover, subtitle: latest });
+    if (!latest) {
+      const chapterLink = item.selectFirst('a[href*="/chapter/"]');
+      if (chapterLink) {
+        const span = chapterLink.selectFirst('span');
+        latest = (span ? span.text() : chapterLink.text()).trim();
+      }
+    }
+    const img = item.selectFirst(
+      'img.object-cover, img[data-type="cover"], figure img, img.img-responsive',
+    );
+    let cover = '';
+    if (img) {
+      cover =
+        img.attr('abs:data-src') ||
+        img.attr('data-src') ||
+        img.attr('abs:src') ||
+        img.attr('src') ||
+        '';
+    }
+    if (/nocover/i.test(cover) || /^data:/i.test(cover)) cover = '';
+    out.push({
+      id: id,
+      title: title,
+      url: fictionUrlFrom(url) || fictionUrl(id),
+      author: author,
+      cover: cover,
+      subtitle: latest,
+    });
   });
   return { doc: doc, items: out };
 }
@@ -183,8 +467,8 @@ function parseFictionList(html, pageUrl) {
  */
 function parseFollowRows(doc) {
   const out = {};
-  doc.select('div.fiction-list-item').forEach(function (item) {
-    const a = item.selectFirst('h2.fiction-title a') || item.selectFirst('a[href*="/fiction/"]');
+  listRowNodes(doc).forEach(function (item) {
+    const a = rowTitleLink(item);
     const id = a ? fictionId(a.attr('abs:href')) : null;
     if (!id || out[id]) return;
     let latestId = null;
@@ -199,7 +483,8 @@ function parseFollowRows(doc) {
     });
     let readUrl = '';
     let readTitle = '';
-    item.select('.list-item').forEach(function (li) {
+    // Legacy: `.list-item`. Redesign: `li` with a "Last read:" label.
+    item.select('.list-item, li').forEach(function (li) {
       if (readUrl || !/last\s+read/i.test(li.text())) return;
       const link = li.selectFirst('a[href*="/chapter/"]');
       if (link && chapterId(link.attr('abs:href')) != null) {
@@ -211,9 +496,31 @@ function parseFollowRows(doc) {
     const m = /([\d,]+)\s+Chapters?\b/i.exec(item.text());
     const chapters = m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
     if (latestId == null && chapters == null && !readUrl) return;
-    out[id] = { latestId: latestId, latestUrl: latestUrl, chapters: chapters, readUrl: readUrl, readTitle: readTitle };
+    out[id] = {
+      latestId: latestId,
+      latestUrl: latestUrl,
+      chapters: chapters,
+      readUrl: readUrl,
+      readTitle: readTitle,
+    };
   });
   return out;
+}
+
+/**
+ * Merge Follows-page parse into [followsAccum] during `list('follow')` so a later `readPositions`
+ * / `checkUpdates` can reuse the same pages instead of walking Follows again.
+ */
+function warmFollowsFromList(doc, page, hasMore) {
+  if (page === 1 || !followsAccum) followsAccum = { rows: {} };
+  const found = parseFollowRows(doc);
+  Object.keys(found).forEach(function (id) {
+    if (!followsAccum.rows[id]) followsAccum.rows[id] = found[id];
+  });
+  if (!hasMore) {
+    followsCache = { at: Date.now(), rows: followsAccum.rows };
+    followsAccum = null;
+  }
 }
 
 /** Every Follows row (cached briefly), or null when signed out or a page failed. */
@@ -235,6 +542,7 @@ async function followRows() {
     return null;
   }
   followsCache = { at: Date.now(), rows: rows };
+  followsAccum = null;
   return rows;
 }
 
@@ -588,9 +896,30 @@ module.exports = {
     const url = listUrl(listId, page);
     if (!url) throw flow.error('UNSUPPORTED', 'Royal Road cannot sync this list');
     if (!(await isSignedIn())) throw flow.error('AUTH_REQUIRED', 'Sign in to sync your Royal Road lists');
+    const who = (await flow.secrets.get('account')) || 'signed-in user';
+    const label = listLabel(listId);
+    flow.log('Requesting ' + who + "'s " + label + ' (page ' + page + ') from Royal Road…');
+    flow.log('GET ' + url);
     const res = await getPage(url, { referer: page > 1 ? listUrl(listId, page - 1) : ORIGIN });
-    const parsed = parseFictionList(res.text, res.url);
-    return { items: parsed.items, hasMore: parsed.items.length > 0 && hasNextPage(parsed.doc, page) };
+    flow.log(
+      'Royal Road returned HTTP ' +
+        res.status +
+        ' for ' +
+        label +
+        '. ' +
+        describeHtml(res.text, res.url || url),
+    );
+    return listFromHtmlBody(listId, res.text, res.url || url, page);
+  },
+
+  /** Parse a list page already loaded in the host WebView (optional crawl path). */
+  async listFromHtml(listId, html, pageUrl) {
+    if (!LIST_PATHS[listId]) throw flow.error('UNSUPPORTED', 'Royal Road cannot sync this list');
+    const url = String(pageUrl || listUrl(listId, 1) || '');
+    const pageMatch = /[?&]page=(\d+)/i.exec(url);
+    const page = pageMatch ? Math.max(1, parseInt(pageMatch[1], 10) || 1) : 1;
+    flow.log('listFromHtml ' + listLabel(listId) + ' page ' + page + ' (' + String(html || '').length + 'b)');
+    return listFromHtmlBody(listId, html, url, page);
   },
 
   async loadWork(workId) {
@@ -656,6 +985,7 @@ module.exports = {
     const form = bookmarkForm(page.text, page.url, type);
     if (!form) return false;
     followsCache = null;
+    followsAccum = null;
     if (form.mark !== !!on) return true;
     const res = await request(form.action, {
       method: 'POST',
@@ -677,6 +1007,7 @@ module.exports = {
     if (!(await isSignedIn())) return;
     const page = await getPage(chapter.url, { referer: fictionUrlFrom(chapter.url) || fictionUrl(workId) });
     followsCache = null;
+    followsAccum = null;
     const rewind = rewindForm(page.text, page.url);
     if (!rewind) return;
     const res = await request(rewind.action, {

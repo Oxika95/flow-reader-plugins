@@ -2,7 +2,7 @@
   "id": "patreon",
   "name": "Patreon",
   "description": "Creators' Patreon posts as stories: collections and tags, with reading position and new-post alerts",
-  "version": "1.1.2",
+  "version": "1.1.4",
   "apiVersion": 5,
   "kind": "source",
   "site": "https://www.patreon.com",
@@ -19,6 +19,9 @@
     "web": { "url": "https://www.patreon.com/login", "doneCookie": "session_id" },
     "note": "Sign in on Patreon's own page. Flow Reader keeps the session cookies, never your password."
   },
+  "sitePages": [
+    { "title": "Sign in", "url": "https://www.patreon.com/login" }
+  ],
   "settings": [
     {
       "key": "order",

@@ -211,6 +211,110 @@ test('list requires sign-in and pages through follows', async () => {
   await assert.rejects(api.list('other', 1), { code: 'UNSUPPORTED' });
 });
 
+test('list parses Oct 2026 fiction-card-expanded Favorites markup', async () => {
+  const html = `<html><body><script>window.royalroad.userId = 42;</script>
+    <div class="fiction-list">
+      <div class="fiction-card-expanded rounded-md">
+        <a href="/fiction/149866/aura-overload?utm_source=my&amp;utm_medium=favorites" class="hidden md:flex">
+          <img class="object-cover" src="https://cdn.example/aura.jpg" alt="">
+        </a>
+        <a href="/fiction/149866/aura-overload?utm_source=my&amp;utm_medium=favorites"
+          class="flex-1" data-vt-trigger="fiction-card">
+          <h2 class="text-base font-bold m-0">Aura Overload</h2>
+        </a>
+        <a href="/fiction/149866/aura-overload/chapter/4254877/35-first-impressions?utm_source=my">
+          <span>35 First Impressions</span>
+        </a>
+      </div>
+      <div class="fiction-card-expanded">
+        <a href="/fiction/21220/mother-of-learning?utm_source=my&amp;utm_medium=favorites" data-vt-trigger="fiction-card">
+          <h2 class="font-bold m-0">Mother of Learning</h2>
+        </a>
+      </div>
+    </div>
+  </body></html>`;
+  const page = await plugin(
+    { [`${ORIGIN}/my/favorites?page=1`]: html },
+    { secrets: { loggedIn: 'true' } },
+  ).api.list('favorite', 1);
+  assert.deepEqual(page.items.map((w) => w.id), ['149866', '21220']);
+  assert.equal(page.items[0].title, 'Aura Overload');
+  assert.match(page.items[0].url, /\/fiction\/149866/);
+  assert.equal(page.items[0].cover, 'https://cdn.example/aura.jpg');
+});
+
+test('list parses Oct 2026 follow-update-card Follows markup', async () => {
+  const html = `<html><body><script>window.royalroad.userId = 42; window.royalroad.username = "Oxika95";</script>
+    <div class="fiction-list">
+      <div class="follow-update-card">
+        <img class="object-cover" src="https://cdn.example/cover.jpg" alt="">
+        <h2 class="text-lg font-bold m-0">
+          <a href="/fiction/134673/surprisingly-enough" class="text-accent"
+            title="Surprisingly Enough(NOT), Common Sense Is Overpowered">Surprisingly Enough(NOT), Common Sense Is Overpowered</a>
+        </h2>
+        <span class="font-semibold">by</span>
+        <a href="/profile/381847" class="font-semibold">PlumBlossom0_0</a>
+        <ul class="list-none">
+          <li class="list-none mb-0">
+            <a href="/fiction/134673/surprisingly-enough/chapter/4257380/1127-farming">
+              <span>1.127 Farming and Gathering go hand in hand</span>
+            </a>
+          </li>
+          <li class="list-none">
+            <div class="text-on-surface">Last read:</div>
+            <a href="/fiction/134673/surprisingly-enough/chapter/4242013/1126-ning">
+              <span>1.126 In which Ning tries to defy the heavens</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </body></html>`;
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: html }, { secrets: { loggedIn: 'true' } });
+  const page = await host.api.list('follow', 1);
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].id, '134673');
+  assert.match(page.items[0].title, /Surprisingly Enough/);
+  assert.equal(page.items[0].author, 'PlumBlossom0_0');
+  assert.equal(page.items[0].cover, 'https://cdn.example/cover.jpg');
+  const positions = await host.api.readPositions([{ id: '134673' }]);
+  assert.equal(positions.length, 1);
+  assert.match(positions[0].chapterUrl, /4242013/);
+});
+
+test('list rejects soft Anubis pages instead of returning zero follows', async () => {
+  const soft =
+    `<html><head><title>Making sure you're not a bot!</title></head>` +
+    `<body><p>Proof of Work. Anubis requires modern JavaScript.</p></body></html>`;
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: soft }, { secrets: { loggedIn: 'true' } });
+  await assert.rejects(host.api.list('follow', 1), { code: 'NETWORK' });
+});
+
+test('list rejects an empty shell page that is not a real empty Follows list', async () => {
+  const shell = `<html><body><script>window.royalroad.userId = 42;</script><p>Loading…</p></body></html>`;
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: shell }, { secrets: { loggedIn: 'true' } });
+  await assert.rejects(host.api.list('follow', 1), { code: 'PARSE' });
+});
+
+test('list allows a logged-in empty Follows page', async () => {
+  const empty =
+    `<html><body><script>window.royalroad.userId = 42;</script>` +
+    `<div class="fiction-list"></div><p>You are not following any fictions.</p></body></html>`;
+  const page = await plugin({ [`${ORIGIN}/my/follows?page=1`]: empty }, { secrets: { loggedIn: 'true' } }).api.list(
+    'follow',
+    1,
+  );
+  assert.deepEqual(page.items, []);
+});
+
+test('list does not treat a logged-in fiction-list shell with no empty copy as empty', async () => {
+  const shell =
+    `<html><body><script>window.royalroad.userId = 42;</script>` +
+    `<div class="fiction-list"></div></body></html>`;
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: shell }, { secrets: { loggedIn: 'true' } });
+  await assert.rejects(host.api.list('follow', 1), { code: 'PARSE' });
+});
+
 test('favorites and read later sync from their own pages', async () => {
   const row = (id) => `<div class="fiction-list-item"><h2 class="fiction-title"><a href="/fiction/${id}/x">X${id}</a></h2></div>
     <script>window.royalroad.userId = 42;</script>`;
@@ -510,6 +614,14 @@ test('readPositions shares one Follows scan with checkUpdates', async () => {
   const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
   await host.api.checkUpdates([work('10', 1200)]);
   await host.api.readPositions([work('10', 1500)]);
+  assert.equal(host.requests.filter((r) => r.url.includes('/my/follows')).length, 1);
+});
+
+test('list(follow) warms Follows cache for readPositions', async () => {
+  const host = plugin({ [`${ORIGIN}/my/follows?page=1`]: FOLLOWS_ROWS }, { secrets: { loggedIn: 'true' } });
+  await host.api.list('follow', 1);
+  const out = await host.api.readPositions([work('10', 1500), work('20', 2700)]);
+  assert.deepEqual(out.map((p) => p.id), ['10', '20']);
   assert.equal(host.requests.filter((r) => r.url.includes('/my/follows')).length, 1);
 });
 

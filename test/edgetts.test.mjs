@@ -100,24 +100,29 @@ describe('EdgeTts', () => {
     assert.equal(shaPart, expect);
   });
 
-  it('synthesize uses flow.ws.collect and returns mp3', async () => {
-    // Minimal fake: empty binary with 2-byte header length 0 + no payload fails;
-    // send one frame with headerLen=0 and 4 audio bytes.
-    const header = Buffer.alloc(2);
-    const audio = Buffer.from([1, 2, 3, 4]);
-    const frame = Buffer.concat([header, audio]);
+  it('synthesize uses flow.ws.collect edge-audio and returns audioPath', async () => {
+    const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const audioFile = join(mkdtempSync(join(tmpdir(), 'edgetts-')), 'clip.mp3');
+    writeFileSync(audioFile, Buffer.from([1, 2, 3, 4]));
+    let seenFormat = '';
     const { api } = loadPlugin(dir, {
-      wsCollect: async () => ({
-        texts: ['Path:turn.end\r\n\r\n'],
-        binariesBase64: [frame.toString('base64')],
-      }),
+      wsCollect: async (opts) => {
+        seenFormat = opts.binaryFormat || '';
+        return {
+          texts: ['Path:turn.end\r\n\r\n'],
+          audioPath: audioFile,
+          binariesBase64: [],
+        };
+      },
     });
     const out = await api.synthesize({
       text: 'Hello',
       voice: 'en-US-AndrewNeural',
       lang: 'en-US',
     });
-    assert.ok(out.mp3Base64);
-    assert.equal(Buffer.from(out.mp3Base64, 'base64').length, 4);
+    assert.equal(seenFormat, 'edge-audio');
+    assert.equal(out.audioPath, audioFile);
+    assert.equal(readFileSync(audioFile).length, 4);
   });
 });

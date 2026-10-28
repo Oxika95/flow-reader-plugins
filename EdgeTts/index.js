@@ -190,67 +190,6 @@ function languageLabel(locale) {
   return LANG_NAMES[primary] || primary;
 }
 
-function bytesToB64(bytes) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i] & 255;
-    const b = i + 1 < bytes.length ? bytes[i + 1] & 255 : 0;
-    const c = i + 2 < bytes.length ? bytes[i + 2] & 255 : 0;
-    const triple = (a << 16) | (b << 8) | c;
-    out += alphabet[(triple >>> 18) & 63];
-    out += alphabet[(triple >>> 12) & 63];
-    out += i + 1 < bytes.length ? alphabet[(triple >>> 6) & 63] : '=';
-    out += i + 2 < bytes.length ? alphabet[triple & 63] : '=';
-  }
-  return out;
-}
-
-function extractMp3(binariesBase64) {
-  const chunks = [];
-  let total = 0;
-  for (const b64 of binariesBase64 || []) {
-    const bin = typeof atob === 'function' ? atob(b64) : null;
-    let arr;
-    if (bin != null) {
-      arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    } else {
-      // Host returns standard base64; decode via flow if needed — binaries already base64 from host.
-      const clean = String(b64).replace(/[^A-Za-z0-9+/=]/g, '');
-      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-      const out = [];
-      for (let i = 0; i < clean.length; i += 4) {
-        const n =
-          ((alphabet.indexOf(clean[i]) & 63) << 18) |
-          ((alphabet.indexOf(clean[i + 1]) & 63) << 12) |
-          ((clean[i + 2] === '=' ? 0 : alphabet.indexOf(clean[i + 2]) & 63) << 6) |
-          (clean[i + 3] === '=' ? 0 : alphabet.indexOf(clean[i + 3]) & 63);
-        out.push((n >>> 16) & 255);
-        if (clean[i + 2] !== '=') out.push((n >>> 8) & 255);
-        if (clean[i + 3] !== '=') out.push(n & 255);
-      }
-      arr = new Uint8Array(out);
-    }
-    // Edge binary frames: 2-byte header length (BE) then audio.
-    if (arr.length >= 2) {
-      const headerLen = (arr[0] << 8) | arr[1];
-      const start = 2 + headerLen;
-      if (start < arr.length) {
-        chunks.push(arr.subarray(start));
-        total += arr.length - start;
-      }
-    }
-  }
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const c of chunks) {
-    out.set(c, o);
-    o += c.length;
-  }
-  return out;
-}
-
 function parseBoundaries(texts) {
   const out = [];
   for (const message of texts || []) {
@@ -389,17 +328,19 @@ async function synthesize(opts) {
     `X-RequestId: ${connectId}\r\n` +
     `X-Timestamp: ${date}\r\n\r\n` +
     `<speak version="1.0" xml:lang="${lang}"><voice name="${voice}"><prosody rate="${rate}" pitch="${pitch}">${escaped}</prosody></voice></speak>`;
+  // Host strips Edge frame headers and writes the MP3; JS only keeps texts/timings.
   const session = await flow.ws.collect({
     url,
     headers: edgeWsHeaders(),
     messages: [config, ssml],
     endPath: 'turn.end',
     timeoutMs: 15000,
+    binaryFormat: 'edge-audio',
   });
-  const mp3 = extractMp3(session.binariesBase64);
-  if (!mp3.length) throw flow.error('NETWORK', 'No audio data received.');
+  const audioPath = session && session.audioPath ? String(session.audioPath) : '';
+  if (!audioPath) throw flow.error('NETWORK', 'No audio data received.');
   return {
-    mp3Base64: bytesToB64(mp3),
+    audioPath,
     boundaries: parseBoundaries(session.texts),
   };
 }

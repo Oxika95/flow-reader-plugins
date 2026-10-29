@@ -123,6 +123,7 @@ describe('EdgeTts', () => {
     });
     assert.equal(seenFormat, 'edge-audio');
     assert.equal(out.audioPath, audioFile);
+    assert.ok(typeof out.connectId === 'string' && out.connectId.length > 0);
     assert.equal(readFileSync(audioFile).length, 4);
   });
 });

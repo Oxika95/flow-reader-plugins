@@ -341,6 +341,7 @@ async function synthesize(opts) {
   if (!audioPath) throw flow.error('NETWORK', 'No audio data received.');
   return {
     audioPath,
+    connectId,
     boundaries: parseBoundaries(session.texts),
   };
 }

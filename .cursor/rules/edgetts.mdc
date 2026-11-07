@@ -18,4 +18,5 @@ https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWe
 
 (App host: `flow-reader` `PluginWs.kt` — keep aligned with that Workers path.)
 
-Do not invent a parallel DRM/handshake. Port Readest; bump `plugin.json` `version` when shipping.
+Do not invent a parallel DRM/handshake. Port Readest; keep the credit header in `index.js`; bump
+`plugin.json` `version` when shipping.

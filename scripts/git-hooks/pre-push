@@ -1,0 +1,23 @@
+#!/bin/sh
+# flow-reader-plugins pre-push: tests, index check, no raw fixtures, secret scan.
+# Enable once (owner): git config core.hooksPath scripts/git-hooks
+set -e
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+PUSH_LINES=$(cat)
+
+echo "pre-push: npm test"
+npm test
+
+echo "pre-push: npm run check"
+npm run check
+
+TRACKED=$(git ls-files 'test/fixtures-raw' || true)
+if [ -n "$TRACKED" ]; then
+  echo "pre-push: tracked files under test/fixtures-raw/ are not allowed:" >&2
+  printf '%s\n' "$TRACKED" >&2
+  exit 1
+fi
+
+printf '%s\n' "$PUSH_LINES" | node scripts/git-hooks/secret-scan.mjs --pre-push

@@ -511,6 +511,21 @@ test('checkUpdates signed in reads the follows page, then RSS for the rest', asy
   assert.equal(requests.filter((r) => r.url.includes('/my/follows')).length, 1);
 });
 
+test('checkUpdates caps per-story RSS fetches so one call cannot hammer the site', async () => {
+  const pages = {};
+  const works = [];
+  for (let i = 1; i <= 25; i++) {
+    const id = String(i);
+    pages[`${ORIGIN}/fiction/syndication/${id}`] = RSS;
+    works.push(work(id, 200));
+  }
+  const { api, requests } = plugin(pages);
+  const out = await api.checkUpdates(works);
+  const rss = requests.filter((r) => r.url.includes('/syndication/'));
+  assert.equal(rss.length, 15);
+  assert.equal(out.length, 15);
+});
+
 test('checkUpdates falls back to RSS when the session expired and skips failed feeds', async () => {
   const loginPage = '<form class="form-login-details"></form><script>window.royalroad.userId = 0;</script>';
   const host = plugin(

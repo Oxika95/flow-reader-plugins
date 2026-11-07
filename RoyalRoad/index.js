@@ -21,6 +21,12 @@ const LIST_PATHS = { follow: '/my/follows', favorite: '/my/favorites', readlater
 
 /** Follows pages read per update check (sequential, gentle on the site). */
 const MAX_FOLLOW_PAGES = 10;
+/**
+ * Per-story RSS fetches in one `checkUpdates` when Follows did not cover them (signed out, or
+ * not on Follow). Cap keeps the host's 60 s fuse as a runaway guard, not a budget to fill; with
+ * `minRequestIntervalMs` 700, 15 feeds stay well under that. Later runs shuffle the remainder.
+ */
+const MAX_RSS_PER_CHECK = 15;
 /** `checkUpdates` and `readPositions` run back to back; one Follows scan serves both. */
 const FOLLOWS_TTL_MS = 2 * 60 * 1000;
 
@@ -1057,10 +1063,19 @@ module.exports = {
       });
     }
 
-    // Not followed on the site, or signed out: the public per-story RSS feed.
+    // Not followed on the site, or signed out: the public per-story RSS feed (capped batch).
     const rest = Object.keys(pending);
-    for (let i = 0; i < rest.length; i++) {
-      const work = pending[rest[i]];
+    if (rest.length > MAX_RSS_PER_CHECK) {
+      for (let i = rest.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = rest[i];
+        rest[i] = rest[j];
+        rest[j] = tmp;
+      }
+    }
+    const batch = rest.slice(0, MAX_RSS_PER_CHECK);
+    for (let i = 0; i < batch.length; i++) {
+      const work = pending[batch[i]];
       try {
         const res = await request(syndicationUrl(work.id), { referer: fictionUrl(work.id) });
         if (res.status < 200 || res.status >= 300) continue;

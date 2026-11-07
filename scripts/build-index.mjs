@@ -1,6 +1,10 @@
 // Builds index.json from every `<Dir>/plugin.json` + `<Dir>/index.js` (+ optional `<Dir>/icon.png`) at the repo root.
-// Usage: node scripts/build-index.mjs [--check]
-//   --check  fail if the committed index.json is out of date (CI).
+// Usage: node scripts/build-index.mjs [--check | --bump-only]
+//   --check      fail if the committed index.json is out of date (CI).
+//   --bump-only  validate the plugins and run only the version-bump check below; write nothing.
+// Both modes (and a plain build) fail when a plugin's manifest, code or icon hash differs from the
+// last committed index.json while its version is unchanged.
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -129,12 +133,49 @@ function build() {
       ...icon,
     });
   }
-  return JSON.stringify({ name: 'Flow Reader Official', apiVersion: HOST_API_VERSION, plugins }, null, 2) + '\n';
+  return {
+    plugins,
+    json: JSON.stringify({ name: 'Flow Reader Official', apiVersion: HOST_API_VERSION, plugins }, null, 2) + '\n',
+  };
 }
 
-const out = build();
+// The app updates a plugin only when its version changes, so changed files under an unchanged version
+// never reach installs. Compare against the index as last committed.
+function committedPlugins() {
+  try {
+    const text = execFileSync('git', ['show', 'HEAD:index.json'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return JSON.parse(text).plugins || [];
+  } catch {
+    return [];
+  }
+}
+
+function checkVersionBumps(plugins, committed) {
+  const problems = [];
+  for (const p of plugins) {
+    const old = committed.find((o) => o.id === p.id);
+    if (!old || old.version !== p.version) continue;
+    const changed = ['manifestSha256', 'sha256', 'iconSha256'].filter((k) => old[k] !== p[k]);
+    if (changed.length) {
+      problems.push(`${p.id}: ${changed.join(', ')} changed but version is still ${p.version}; bump "version" in ${p.manifestUrl}`);
+    }
+  }
+  if (problems.length) throw new Error(`Plugin files changed without a version bump:\n  ${problems.join('\n  ')}`);
+}
+
+let built;
+try {
+  built = build();
+  checkVersionBumps(built.plugins, committedPlugins());
+} catch (e) {
+  console.error(e.message);
+  process.exit(1);
+}
+const out = built.json;
 const target = join(ROOT, 'index.json');
-if (process.argv.includes('--check')) {
+if (process.argv.includes('--bump-only')) {
+  console.log('plugin versions are bumped where files changed');
+} else if (process.argv.includes('--check')) {
   const current = existsSync(target) ? readFileSync(target, 'utf8').replace(/\r\n/g, '\n') : '';
   if (current !== out) {
     console.error('index.json is out of date. Run: npm run build');

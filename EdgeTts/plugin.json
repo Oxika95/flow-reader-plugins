@@ -2,7 +2,7 @@
   "id": "edgetts",
   "name": "Edge TTS",
   "kind": "tts",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "apiVersion": 5,
   "description": "Microsoft Edge Read Aloud neural voices",
   "allowedHosts": ["api.msedgeservices.com", "speech.platform.bing.com"],

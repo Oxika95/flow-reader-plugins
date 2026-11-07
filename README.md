@@ -66,3 +66,8 @@ cd ../flow-reader
 Pushing to `main` runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml): tests, index
 check, then deploys `index.json` and each plugin folder to GitHub Pages. Enable Pages with
 **Source: GitHub Actions** in the repository settings.
+
+## License
+
+This repository is licensed under the GNU Affero General Public License v3.0 or later (see LICENSE).
+EdgeTts is adapted from [Readest](https://github.com/readest/readest) (also AGPL-3.0-or-later).

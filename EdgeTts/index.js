@@ -2,7 +2,8 @@
 
 /**
  * Edge Read Aloud client — handshake / Sec-MS-GEC v2 mirrored from Readest.
- * Upstream (do not diverge without porting from here first):
+ * Adapted from Readest (https://github.com/readest/readest), AGPL-3.0-or-later.
+ * Upstream (do not diverge without porting from here first; keep this credit header):
  * https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts
  * Raw WS upgrade (host PluginWs): Readest workersWebSocket.ts
  * (rany2/edge-tts#492).

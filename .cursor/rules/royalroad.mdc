@@ -1,0 +1,20 @@
+---
+description: Royal Road plugin (HTML parsing, lists, sign-in, sync functions)
+globs: RoyalRoad/**,test/royalroad.test.mjs
+alwaysApply: false
+---
+
+# Royal Road (`RoyalRoad/`)
+
+- Id `royalroad`, book ids `rr:*`. Never change either; they key users' books, data and sign-in.
+- The plugin parses site HTML, so a site markup change shows up as an empty list or a PARSE error.
+  Keep the markup probes (`markupProbe`, `describeHtml`) and `flow.log` lines: they are how a
+  broken page is diagnosed from the app's Plugins debug channel.
+- Chapter body is `div.chapter-inner` only. Author notes are the `authorNotes` setting (default off,
+  compared with `=== true`).
+- Follow, Favorite and Read Later are `syncable` lists; the app's two-way sync calls
+  `setMembership`, `syncProgress` and `readPositions`. Keep their contracts in
+  `../flow-reader/docs/plugins/api-functions.md`.
+- Add a parsing test with a trimmed fixture in `test/royalroad.test.mjs` for every markup fix;
+  `test/fixtures-raw/` is git-ignored, so commit only small, scrubbed fixtures inline.
+- Release: bump `version` in `plugin.json`, `npm test`, `npm run build`, commit `index.json`.

@@ -1,0 +1,19 @@
+---
+description: Patreon plugin (JSON:API posts, per-creator index, collections and tags, Memberships)
+globs: Patreon/**,test/patreon.test.mjs
+alwaysApply: false
+---
+
+# Patreon (`Patreon/`)
+
+- Id `patreon`, book ids `pt:*`. Never change either.
+- A story is a filtered set of one creator's posts. Work ids: `{campaignId}`,
+  `{campaignId}.c{collectionId}`, `{campaignId}.t{hash}`. Do not change how they are built; they key
+  saved positions and the per-creator index in `flow.storage`.
+- Post metadata comes from `/api/posts` and is indexed per creator, so posts read once stay in the ToC
+  after access lapses. Indexing has a time budget per call and resumes on the next call.
+- Follow is not syncable. Memberships is a browse list (`kind: "browse"`) served by `browse`.
+- The app seeds sign-in cookies for this plugin by id (`PluginSessionSeed`); changing the cookie name
+  or login URL in `plugin.json` needs the app side changed first.
+- Add a test in `test/patreon.test.mjs` for every parsing or indexing fix.
+- Release: bump `version` in `plugin.json`, `npm test`, `npm run build`, commit `index.json`.

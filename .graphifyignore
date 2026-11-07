@@ -1,3 +1,0 @@
-# Graphify also reads .gitignore. Extra exclusions: generated data, not code.
-index.json
-package-lock.json

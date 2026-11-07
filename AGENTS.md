@@ -35,11 +35,10 @@ Checks that live in the app repo (run them from `../flow-reader`):
 .\scripts\verify.ps1 # fast: includes plugin tests and the version-bump check when this repo changed
 .\scripts\verify.ps1 -Full # adds `npm run check`, API version and host parity
 node scripts/agent/contract-check.mjs # app runtime vs test/host.mjs vs plugin prelude; fails on mismatch
-.\scripts\graph.ps1 # refresh the code graphs, this repo's in graphify-out/ (gitignored)
 ```
 
-Look up plugin code in its graph first: `graphify query "<question>"` from this folder (name the plugin: every
-plugin defines `pathOf`, `search`, `loadChapter`). Setup and blind spots: `../flow-reader/docs/agent/graph.md`.
+Find plugin code with `rg` from this folder, one plugin folder at a time (every plugin defines `pathOf`,
+`search`, `loadChapter`), for example `rg -n '\bpathOf\(' RoyalRoad/`.
 
 Run `contract-check` after any `flow.*` host change, and `verify -Full` before a release.
 

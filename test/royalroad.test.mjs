@@ -42,7 +42,7 @@ test('manifest matches the app contract', () => {
   const { manifest } = plugin({});
   assert.equal(manifest.id, 'royalroad');
   assert.equal(manifest.bookIdPrefix, 'rr');
-  assert.equal(manifest.apiVersion, 5);
+  assert.equal(manifest.apiVersion, 6);
   assert.ok(manifest.capabilities.includes('updates'));
   assert.deepEqual(
     manifest.lists.map((l) => l.id),

@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Plugin contract range the app accepts (app: PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION).
-const HOST_API_VERSION = 5;
-const MIN_API_VERSION = 5;
+const HOST_API_VERSION = 6;
+const MIN_API_VERSION = 6;
 const ID = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 const SOURCE_CAPABILITIES = new Set([
   'search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates', 'browse',

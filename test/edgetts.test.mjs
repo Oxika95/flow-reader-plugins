@@ -10,7 +10,7 @@ describe('EdgeTts', () => {
   it('manifest is kind tts with clip capabilities', () => {
     const { manifest } = loadPlugin(dir);
     assert.equal(manifest.kind, 'tts');
-    assert.equal(manifest.apiVersion, 5);
+    assert.equal(manifest.apiVersion, 6);
     assert.ok(manifest.capabilities.includes('clipAudio'));
     assert.ok(manifest.allowedHosts.includes('speech.platform.bing.com'));
   });
@@ -100,15 +100,18 @@ describe('EdgeTts', () => {
     assert.equal(shaPart, expect);
   });
 
-  it('synthesize uses flow.ws.collect edge-audio and returns audioPath', async () => {
+  it('synthesize uses flow.ws.collect edge-audio and echoes requestId', async () => {
     const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
-    const audioFile = join(mkdtempSync(join(tmpdir(), 'edgetts-')), 'clip.mp3');
+    const requestId = 'a'.repeat(32);
+    const audioFile = join(mkdtempSync(join(tmpdir(), 'edgetts-')), `${requestId}.mp3`);
     writeFileSync(audioFile, Buffer.from([1, 2, 3, 4]));
     let seenFormat = '';
+    let seenRequestId = '';
     const { api } = loadPlugin(dir, {
       wsCollect: async (opts) => {
         seenFormat = opts.binaryFormat || '';
+        seenRequestId = opts.requestId || '';
         return {
           texts: ['Path:turn.end\r\n\r\n'],
           audioPath: audioFile,
@@ -120,10 +123,12 @@ describe('EdgeTts', () => {
       text: 'Hello',
       voice: 'en-US-AndrewNeural',
       lang: 'en-US',
+      requestId,
     });
     assert.equal(seenFormat, 'edge-audio');
+    assert.equal(seenRequestId, requestId);
     assert.equal(out.audioPath, audioFile);
-    assert.ok(typeof out.connectId === 'string' && out.connectId.length > 0);
+    assert.equal(out.requestId, requestId);
     assert.equal(readFileSync(audioFile).length, 4);
   });
 });

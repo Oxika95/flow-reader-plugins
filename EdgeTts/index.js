@@ -310,8 +310,12 @@ async function synthesize(opts) {
   const pitchPercent = Number((opts && opts.pitchPercent) || 0);
   const rate = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
   const pitch = pitchPercent >= 0 ? `+${pitchPercent}%` : `${pitchPercent}%`;
-  const connectId = randomConnectId();
-  const url = speechUrl(connectId);
+  // App-owned ownership id (32 lowercase hex). Falls back only for standalone tests.
+  const requestId = String((opts && opts.requestId) || '').trim() || randomConnectId();
+  if (!/^[a-f0-9]{32}$/.test(requestId)) {
+    throw flow.error('PARSE', 'synthesize needs requestId (32 lowercase hex)');
+  }
+  const url = speechUrl(requestId);
   const date = new Date().toString();
   const escaped = text
     .replace(/&/g, '&amp;')
@@ -326,10 +330,10 @@ async function synthesize(opts) {
   const ssml =
     'Content-Type: application/ssml+xml\r\n' +
     'Path: ssml\r\n' +
-    `X-RequestId: ${connectId}\r\n` +
+    `X-RequestId: ${requestId}\r\n` +
     `X-Timestamp: ${date}\r\n\r\n` +
     `<speak version="1.0" xml:lang="${lang}"><voice name="${voice}"><prosody rate="${rate}" pitch="${pitch}">${escaped}</prosody></voice></speak>`;
-  // Host strips Edge frame headers and writes the MP3; JS only keeps texts/timings.
+  // Host strips Edge frame headers and writes the MP3 named by requestId.
   const session = await flow.ws.collect({
     url,
     headers: edgeWsHeaders(),
@@ -337,12 +341,13 @@ async function synthesize(opts) {
     endPath: 'turn.end',
     timeoutMs: 15000,
     binaryFormat: 'edge-audio',
+    requestId,
   });
   const audioPath = session && session.audioPath ? String(session.audioPath) : '';
   if (!audioPath) throw flow.error('NETWORK', 'No audio data received.');
   return {
     audioPath,
-    connectId,
+    requestId,
     boundaries: parseBoundaries(session.texts),
   };
 }

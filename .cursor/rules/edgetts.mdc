@@ -20,3 +20,7 @@ https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWe
 
 Do not invent a parallel DRM/handshake. Port Readest; keep the credit header in `index.js`; bump
 `plugin.json` `version` when shipping.
+
+**Ownership:** `synthesize` takes the app's `requestId` (32 lowercase hex), uses it as Edge
+ConnectionId / X-RequestId, passes it to `flow.ws.collect`, and echoes it. Do not mint a separate
+id when the app supplied one.

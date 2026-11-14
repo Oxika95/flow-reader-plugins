@@ -51,6 +51,8 @@ const RULES = [
 function isAllowlisted(line) {
   if (/\b[A-Z][A-Z0-9_]*PASSWORD\b\s*=\s*["']password["']/i.test(line)) return true;
   if (/6A5AA1D4EAFF4E9FB37E23D68491D6F4/i.test(line)) return true;
+  // Audiobookshelf tests sign in with the placeholder password "secret".
+  if (/password\s*[:=]\s*['"]secret['"]/i.test(line)) return true;
   return false;
 }
 

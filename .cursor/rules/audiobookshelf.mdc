@@ -1,0 +1,18 @@
+---
+description: Audiobookshelf ebook plugin constraints
+globs: Audiobookshelf/**
+alwaysApply: false
+---
+
+# Audiobookshelf plugin
+
+EPUB ebooks only. Do not add audiobook playback, `progress` / `currentTime` / `isFinished` patches,
+or PDF/MOBI/comic items.
+
+- Plugin id `audiobookshelf`, book prefix `abs` — never rename after release.
+- `serverSetting: "server"`; password is never stored; `auth.bearer` is `accessToken`.
+- Lists: `downloaded` (local shelf; opens auto-join) and `catalog` (`kind: browse`, `shelf: true`: the tab is the library, with Library / Series / Collections / Authors and the server sort menu).
+- `listLibraries` / `setLibraryEnabled` drive Account → Manage toggles; off libraries leave Catalog and search.
+- Chapter URLs are `spine:` + zip path. `loadWork` sets `file` to the downloaded EPUB path.
+- `syncProgress` patches only `ebookLocation`, `ebookProgress`, `lastUpdate`.
+- Do not edit Royal Road, Patreon, or Edge TTS when changing this plugin.

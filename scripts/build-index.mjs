@@ -16,7 +16,7 @@ const HOST_API_VERSION = 6;
 const MIN_API_VERSION = 6;
 const ID = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 const SOURCE_CAPABILITIES = new Set([
-  'search', 'lists', 'auth', 'membership', 'progressSync', 'resolveUrl', 'updates', 'browse',
+  'search', 'lists', 'auth', 'membership', 'progressSync', 'locusSync', 'resolveUrl', 'updates', 'browse',
 ]);
 const TTS_CAPABILITIES = new Set(['clipAudio', 'wordBoundaries', 'prefetch', 'networkLanes']);
 const LIST_KINDS = new Set(['stories', 'browse']);
@@ -26,6 +26,7 @@ const REQUIRED_FUNCTIONS = {
   auth: ['login', 'logout', 'session'],
   membership: ['setMembership'],
   progressSync: ['syncProgress'],
+  locusSync: ['readPositions'],
   resolveUrl: ['resolveUrl'],
   updates: ['checkUpdates'],
   browse: ['browse'],

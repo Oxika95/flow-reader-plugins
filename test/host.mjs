@@ -86,7 +86,7 @@ function makeHtml() {
  * Load a plugin directory. [routes] maps a request `(url, opts)` to `{ status?, url?, text }`
  * or null for a 404.
  */
-export function loadPlugin(dir, { routes = () => null, wsCollect = null, settings = {}, secrets = {} } = {}) {
+export function loadPlugin(dir, { routes = () => null, wsCollect = null, settings = {}, secrets = {}, epub = {} } = {}) {
   const manifest = JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8'));
   const code = readFileSync(join(dir, 'index.js'), 'utf8');
   const secretStore = new Map(Object.entries(secrets));
@@ -95,25 +95,92 @@ export function loadPlugin(dir, { routes = () => null, wsCollect = null, setting
   let cookiesCleared = 0;
 
   const allowed = (manifest.allowedHosts || []).map((h) => h.toLowerCase().replace(/^www\./, ''));
-  const isAllowed = (host) => {
-    const h = host.toLowerCase().replace(/^www\./, '');
-    return allowed.some((a) => h === a || h.endsWith('.' + a));
-  };
-
   const error = (code, message) => Object.assign(new Error(message || code), { code });
   const defaults = {};
   (manifest.settings || []).forEach((s) => (defaults[s.key] = s.default));
+  const mergedSettings = { ...defaults, ...settings };
+  const serverHost = () => {
+    const key = (manifest.serverSetting || '').trim();
+    if (!key) return '';
+    const raw = String(mergedSettings[key] || '').trim();
+    if (!raw) return '';
+    try {
+      const withScheme = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+      return new URL(withScheme).host.toLowerCase().replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+  const isAllowed = (host) => {
+    const h = host.toLowerCase().replace(/^www\./, '');
+    const dynamic = serverHost();
+    if (dynamic && h === dynamic) return true;
+    return allowed.some((a) => h === a || h.endsWith('.' + a));
+  };
+  const files = new Map();
 
   const flow = {
     plugin: { id: manifest.id, version: manifest.version },
-    settings: { ...defaults, ...settings },
+    settings: mergedSettings,
     async fetch(url, opts = {}) {
       const host = new URL(url).host;
       if (!isAllowed(host)) throw error('BLOCKED', 'Host not allowed by plugin manifest: ' + host);
-      requests.push(JSON.parse(JSON.stringify({ url, ...opts })));
-      const r = routes(url, opts);
+      const o = { ...opts };
+      const bearerKey = (manifest.auth && manifest.auth.bearer) || '';
+      if (o.auth !== false && bearerKey && !Object.keys(o.headers || {}).some((k) => k.toLowerCase() === 'authorization')) {
+        const token = secretStore.get(bearerKey);
+        if (token) {
+          o.headers = { ...(o.headers || {}), Authorization: 'Bearer ' + token };
+        }
+      }
+      requests.push(JSON.parse(JSON.stringify({ url, ...o })));
+      const r = routes(url, o);
       if (!r) return { status: 404, url, headers: {}, text: '' };
+      if (o.saveAs) {
+        const path = String(o.saveAs).replace(/^\/+/, '');
+        files.set(path, r.bytes ?? Buffer.from(r.text ?? '', 'utf8'));
+        return {
+          status: r.status ?? 200,
+          url: r.url ?? url,
+          headers: r.headers ?? {},
+          path,
+          bytes: files.get(path).length,
+        };
+      }
       return { status: r.status ?? 200, url: r.url ?? url, headers: r.headers ?? {}, text: r.text ?? '' };
+    },
+    epub: {
+      spine(file) {
+        if (typeof epub.spine === 'function') return epub.spine(file) || [];
+        return [];
+      },
+      html(file, href) {
+        if (typeof epub.html === 'function') return epub.html(file, href) || '';
+        return '';
+      },
+      cfiWrite(opts) {
+        if (typeof epub.cfiWrite === 'function') return epub.cfiWrite(opts);
+        return 'epubcfi(/6/' + (((opts && opts.spineIndex) || 0) + 1) * 2 + '!)';
+      },
+      cfiRead(file, cfi) {
+        if (typeof epub.cfiRead === 'function') return epub.cfiRead(file, cfi);
+        // No regex literal here: contract-check's object walker does not skip them, and a
+        // parenthesis inside one makes it treat the rest of `flow` as nested under `epub`.
+        const text = String(cfi || '');
+        const marker = 'epubcfi(/6/';
+        const start = text.indexOf(marker);
+        if (start < 0) return null;
+        let i = start + marker.length;
+        let odd = 0;
+        let saw = false;
+        while (i < text.length && text.charCodeAt(i) >= 48 && text.charCodeAt(i) <= 57) {
+          saw = true;
+          odd = odd * 10 + (text.charCodeAt(i) - 48);
+          i++;
+        }
+        if (!saw || odd % 2 !== 0 || odd < 2) return null;
+        return { spineIndex: odd / 2 - 1, blockIndex: 0, charOffset: 0, anchorText: '', fraction: 0 };
+      },
     },
     html: makeHtml(),
     storage: {

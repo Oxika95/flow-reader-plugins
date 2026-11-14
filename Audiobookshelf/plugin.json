@@ -1,0 +1,35 @@
+{
+  "id": "audiobookshelf",
+  "name": "Audiobookshelf",
+  "description": "EPUB ebooks from your self-hosted Audiobookshelf server",
+  "version": "1.1.3",
+  "apiVersion": 6,
+  "kind": "source",
+  "lang": "en",
+  "bookIdPrefix": "abs",
+  "allowedHosts": ["localhost"],
+  "serverSetting": "server",
+  "minRequestIntervalMs": 200,
+  "capabilities": ["search", "lists", "auth", "membership", "progressSync", "locusSync", "updates", "browse"],
+  "lists": [
+    { "id": "downloaded", "title": "Downloaded", "icon": "download", "membershipToggle": false, "syncable": false },
+    { "id": "catalog", "title": "Catalog", "icon": "list", "kind": "browse", "shelf": true, "membershipToggle": false, "syncable": false }
+  ],
+  "auth": {
+    "fields": [
+      { "key": "username", "label": "Username", "type": "text" },
+      { "key": "password", "label": "Password", "secret": true, "type": "password" }
+    ],
+    "bearer": "accessToken",
+    "note": "Sign in with your Audiobookshelf account. The password is not stored — only the access and refresh tokens."
+  },
+  "settings": [
+    {
+      "key": "server",
+      "type": "text",
+      "label": "Server address",
+      "description": "Full base URL, for example http://192.168.1.20:13378 or https://abs.example.com. On the Android emulator, use http://10.0.2.2:PORT for a server on this PC.",
+      "default": ""
+    }
+  ]
+}

@@ -2,7 +2,7 @@
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved Royal Road serials",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "apiVersion": 6,
   "kind": "source",
   "site": "https://www.royalroad.com",
@@ -10,11 +10,12 @@
   "bookIdPrefix": "rr",
   "allowedHosts": ["royalroad.com", "royalroadl.com"],
   "minRequestIntervalMs": 700,
-  "capabilities": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates"],
+  "capabilities": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates", "browse"],
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "bookmark", "membershipToggle": true, "syncable": true, "notifyDefault": true },
     { "id": "favorite", "title": "Favorite", "icon": "favorite", "membershipToggle": true, "syncable": true },
-    { "id": "readlater", "title": "Read Later", "icon": "schedule", "membershipToggle": true, "syncable": true }
+    { "id": "readlater", "title": "Read Later", "icon": "schedule", "membershipToggle": true, "syncable": true },
+    { "id": "fictions", "title": "Fictions", "icon": "list", "kind": "browse", "shelf": true, "openInSearch": true, "membershipToggle": false, "syncable": false }
   ],
   "auth": {
     "web": { "url": "https://www.royalroad.com/account/login", "doneCookie": ".AspNetCore.Identity.Application" },

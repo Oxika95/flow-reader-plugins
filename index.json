@@ -49,14 +49,14 @@
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved Royal Road serials",
-      "version": "1.5.3",
+      "version": "1.6.0",
       "apiVersion": 6,
       "kind": "source",
       "lang": "en",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
-      "manifestSha256": "c7434e14016aa946489834deee2fa9a320fc0962e918eb56bcee9fd93c9dd808",
-      "sha256": "9d26defd890a3f93caeac0f0c75eccf15f4b82f9592009d1531dad87e2d7b3cf",
+      "manifestSha256": "7e69f9cc30378cfef89bbcee7362b29e2103d677f552abf63538dcdef66fcb64",
+      "sha256": "44cd928b2d0eea9e1c2984ab40a436328995f6c8ebcb77887d4727976bdf76bc",
       "iconUrl": "RoyalRoad/icon.png",
       "iconSha256": "623b163b3e85de6bec94f79c186bf6bdba1d465bcfde2058d41d8cf56efdf43c"
     }

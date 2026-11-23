@@ -44,10 +44,15 @@ test('manifest matches the app contract', () => {
   assert.equal(manifest.bookIdPrefix, 'rr');
   assert.equal(manifest.apiVersion, 6);
   assert.ok(manifest.capabilities.includes('updates'));
+  assert.ok(manifest.capabilities.includes('browse'));
   assert.deepEqual(
     manifest.lists.map((l) => l.id),
-    ['follow', 'favorite', 'readlater'],
+    ['follow', 'favorite', 'readlater', 'fictions'],
   );
+  const fictions = manifest.lists.find((l) => l.id === 'fictions');
+  assert.equal(fictions.kind, 'browse');
+  assert.equal(fictions.shelf, true);
+  assert.equal(fictions.openInSearch, true);
 });
 
 test('loadWork parses metadata and the full ToC', async () => {
@@ -196,6 +201,33 @@ test('search parses fiction list items and paging', async () => {
     subtitle: '109 Chapters',
   });
   assert.equal(page.items[1].cover, '');
+});
+
+test('browse loads curated list with genre filter and no desc', async () => {
+  const html = `<html><body>
+    <div class="fiction-list-item">
+      <h2 class="fiction-title"><a href="/fiction/1/a">A</a></h2>
+    </div>
+    <ul class="pagination"><li><a data-page="2" href="?genre=fantasy&page=2">2</a></li></ul>
+  </body></html>`;
+  const { api, requests } = plugin({
+    [`${ORIGIN}/fictions/rising-stars?genre=fantasy`]: html,
+    [`${ORIGIN}/fictions/best-rated`]: html,
+  });
+  const page = await api.browse('fictions', 1, 'fantasy', 'rising-stars');
+  assert.equal(requests[0].url, `${ORIGIN}/fictions/rising-stars?genre=fantasy`);
+  assert.equal(page.tab, 'rising-stars');
+  assert.equal(page.sort, 'fantasy');
+  assert.equal(page.desc, undefined);
+  assert.equal(page.hasMore, true);
+  assert.equal(page.items[0].id, '1');
+  assert.ok(page.tabs.some((t) => t.id === 'best-rated'));
+  assert.ok(page.sorts.some((s) => s.id === 'all'));
+
+  const defaults = await api.browse('fictions', 1, '', 'library');
+  assert.equal(requests[1].url, `${ORIGIN}/fictions/best-rated`);
+  assert.equal(defaults.tab, 'best-rated');
+  assert.equal(defaults.sort, 'all');
 });
 
 test('list requires sign-in and pages through follows', async () => {

@@ -19,6 +19,43 @@ const BOOKMARK_TYPES = { follow: 'follow', favorite: 'favorite', readlater: 'ril
 /** Signed-in list pages, keyed by manifest list id. */
 const LIST_PATHS = { follow: '/my/follows', favorite: '/my/favorites', readlater: '/my/readlater' };
 
+/** Curated fiction lists for Search-section shelf (`browse` / openInSearch). */
+const FICTION_LISTS = [
+  { id: 'best-rated', label: 'Best Rated' },
+  { id: 'trending', label: 'Trending' },
+  { id: 'active-popular', label: 'Ongoing Fictions' },
+  { id: 'complete', label: 'Complete' },
+  { id: 'weekly-popular', label: 'Popular this week' },
+  { id: 'latest-updates', label: 'Latest Updates' },
+  { id: 'new', label: 'Newest Fictions' },
+  { id: 'rising-stars', label: 'Rising Stars' },
+  { id: 'writathon', label: 'Writathon' },
+];
+
+/**
+ * Genre filter dropdown on curated lists (`?genre=` slug).
+ * Advanced search filters: https://www.royalroad.com/fictions/search?globalFilters=true (follow-up).
+ */
+const FICTION_GENRES = [
+  { id: 'all', label: 'All Genres' },
+  { id: 'action', label: 'Action' },
+  { id: 'adventure', label: 'Adventure' },
+  { id: 'comedy', label: 'Comedy' },
+  { id: 'contemporary', label: 'Contemporary' },
+  { id: 'drama', label: 'Drama' },
+  { id: 'fantasy', label: 'Fantasy' },
+  { id: 'historical', label: 'Historical' },
+  { id: 'horror', label: 'Horror' },
+  { id: 'mystery', label: 'Mystery' },
+  { id: 'psychological', label: 'Psychological' },
+  { id: 'romance', label: 'Romance' },
+  { id: 'satire', label: 'Satire' },
+  { id: 'sci_fi', label: 'Sci-fi' },
+  { id: 'short_story', label: 'Short Story' },
+  { id: 'tragedy', label: 'Tragedy' },
+  { id: 'tragicomedy', label: 'Tragicomedy' },
+];
+
 /** Follows pages read per update check (sequential, gentle on the site). */
 const MAX_FOLLOW_PAGES = 10;
 /**
@@ -79,6 +116,34 @@ function fictionUrl(workId) {
 function searchUrl(query, page) {
   const q = encodeURIComponent(String(query || '').trim());
   return ORIGIN + '/fictions/search?title=' + q + (page > 1 ? '&page=' + page : '');
+}
+
+function fictionListById(tab) {
+  const id = String(tab || '').trim();
+  for (let i = 0; i < FICTION_LISTS.length; i++) {
+    if (FICTION_LISTS[i].id === id) return FICTION_LISTS[i];
+  }
+  return FICTION_LISTS[0];
+}
+
+function fictionGenreById(sort) {
+  const bare = String(sort || '').replace(/^[!+]/, '').trim();
+  if (!bare || bare === 'all') return FICTION_GENRES[0];
+  for (let i = 0; i < FICTION_GENRES.length; i++) {
+    if (FICTION_GENRES[i].id === bare) return FICTION_GENRES[i];
+  }
+  return FICTION_GENRES[0];
+}
+
+/** Curated list URL: `/fictions/{path}` with optional `genre` and `page`. */
+function fictionListUrl(listId, genreId, page) {
+  const list = fictionListById(listId);
+  const genre = fictionGenreById(genreId);
+  let url = ORIGIN + '/fictions/' + list.id;
+  const q = [];
+  if (genre.id && genre.id !== 'all') q.push('genre=' + encodeURIComponent(genre.id));
+  if (page > 1) q.push('page=' + page);
+  return q.length ? url + '?' + q.join('&') : url;
 }
 
 function listUrl(listId, page) {
@@ -895,6 +960,28 @@ module.exports = {
     const res = await getPage(url, { referer: ORIGIN });
     const parsed = parseFictionList(res.text, res.url);
     return { items: parsed.items, hasMore: parsed.items.length > 0 && hasNextPage(parsed.doc, page) };
+  },
+
+  /**
+   * Search-section shelf: curated fiction lists × genre filter.
+   * `tab` = list id, `sort` = genre id (filter; no desc). Host omits `desc` so the second
+   * dropdown does not flip. Advanced search: /fictions/search?globalFilters=true (later).
+   */
+  async browse(id, page, sort, tab) {
+    page = Math.max(1, page || 1);
+    const list = fictionListById(tab);
+    const genre = fictionGenreById(sort);
+    const url = fictionListUrl(list.id, genre.id, page);
+    const res = await getPage(url, { referer: page > 1 ? fictionListUrl(list.id, genre.id, page - 1) : ORIGIN });
+    const parsed = parseFictionList(res.text, res.url);
+    return {
+      items: parsed.items,
+      hasMore: parsed.items.length > 0 && hasNextPage(parsed.doc, page),
+      tab: list.id,
+      tabs: FICTION_LISTS,
+      sort: genre.id,
+      sorts: FICTION_GENRES,
+    };
   },
 
   async list(listId, page) {

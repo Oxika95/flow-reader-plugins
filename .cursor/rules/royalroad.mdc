@@ -15,6 +15,11 @@ alwaysApply: false
 - Follow, Favorite and Read Later are `syncable` lists; the app's two-way sync calls
   `setMembership`, `syncProgress` and `readPositions`. Keep their contracts in
   `../flow-reader/docs/plugins/api-functions.md`.
+- Search FAB: `fictions` list (`kind: browse`, `shelf`, `openInSearch`) → curated `/fictions/{list}`
+  shelves with `?genre=` filter via `browse` (no `desc`). Title bar is still `search(query, page)`.
+  Advanced search UI is a follow-up targeting
+  `https://www.royalroad.com/fictions/search?globalFilters=true` (do not open that page from the
+  app until wired).
 - Add a parsing test with a trimmed fixture in `test/royalroad.test.mjs` for every markup fix;
   `test/fixtures-raw/` is git-ignored, so commit only small, scrubbed fixtures inline.
 - Release: bump `version` in `plugin.json`, `npm test`, `npm run build`, commit `index.json`.
